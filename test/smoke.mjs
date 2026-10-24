@@ -422,6 +422,8 @@ console.log('guest webview: in-page navigation is mirrored into the address bar'
 if (findButtonByTitle(bridged, 'action.back') !== undefined) throw new Error('the toolbar must not offer history buttons');
 if (findButtonByTitle(bridged, 'action.forward') !== undefined) throw new Error('the toolbar must not offer forward navigation');
 console.log('guest webview: no history buttons');
+if (findButtonByTitle(bridged, 'action.copy') !== undefined) throw new Error('the toolbar must not offer a copy button');
+console.log('guest webview: no copy button');
 delete globalThis.window.dshDesktop;
 
 console.log('SMOKE_OK');

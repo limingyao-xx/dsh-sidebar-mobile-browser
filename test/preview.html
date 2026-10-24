@@ -44,7 +44,6 @@
  *   url     page to preview (must be http/https)
  *   size    preset id to remember before mounting (e.g. ipad-mini)
  *   open    "1" opens the size row after mounting
- *   copy    "1" clicks the copy button so the checkmark state is captured
  */
 (function () {
   const state = [];
@@ -230,7 +229,6 @@
 
     await wait(120);
     if (params.get('open') === '1') { clickByTitle('尺寸设置'); await wait(80); }
-    if (params.get('copy') === '1') { window.__freeze = true; clickByTitle('复制 URL'); await wait(80); }
     window.__harnessReady = true;
   });
 })();

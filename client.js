@@ -57,8 +57,6 @@ window.__ModuleLoader__.load({
       'action.reload': '重新加载',
       'frame.pending': '正在创建预览页…',
       'error.frame': '页面加载失败（{code}）',
-      'action.copy': '复制 URL',
-      'action.copied': '已复制',
       'action.rotate': '横竖屏切换',
       'action.size': '尺寸设置',
       'device.label': '尺寸',
@@ -67,7 +65,6 @@ window.__ModuleLoader__.load({
       'empty.body': '页面会以所选设备尺寸渲染，可随时切换机型或改宽高。',
       'error.empty': '请先输入网址。',
       'error.scheme': '只支持 http / https 地址。',
-      'error.clipboard': '复制失败，请手动选择地址栏内容。',
       'mention.current': '当前页面地址',
       'mention.other': '预览页：{host}',
       'action.mention': '插入到对话框',
@@ -95,8 +92,6 @@ window.__ModuleLoader__.load({
       'action.reload': 'Reload',
       'frame.pending': 'Starting the preview…',
       'error.frame': 'Could not load the page ({code})',
-      'action.copy': 'Copy URL',
-      'action.copied': 'Copied',
       'action.rotate': 'Rotate',
       'action.size': 'Size settings',
       'device.label': 'Size',
@@ -105,7 +100,6 @@ window.__ModuleLoader__.load({
       'empty.body': 'The page renders at the selected device size; switch devices or edit the size at any time.',
       'error.empty': 'Enter a URL first.',
       'error.scheme': 'Only http and https addresses are supported.',
-      'error.clipboard': 'Copy failed; select the address bar text instead.',
       'mention.current': 'Current page URL',
       'mention.other': 'Preview: {host}',
       'action.mention': 'Insert into chat',
@@ -460,7 +454,6 @@ window.__ModuleLoader__.load({
           const [dims, setDims] = React.useState({ width: String(size.width), height: String(size.height) });
           const [url, setUrl] = React.useState(initial);
           const [revision, setRevision] = React.useState(0);
-          const [copied, setCopied] = React.useState(false);
           const [inserted, setInserted] = React.useState(false);
           /** '' | 'copied' | 'saved' — what the screenshot button just did. */
           const [shot, setShot] = React.useState('');
@@ -680,12 +673,6 @@ window.__ModuleLoader__.load({
           }, [size.width, size.height]);
 
           React.useEffect(() => {
-            if (!copied) return undefined;
-            const timer = window.setTimeout(() => setCopied(false), 1400);
-            return () => window.clearTimeout(timer);
-          }, [copied]);
-
-          React.useEffect(() => {
             if (!inserted) return undefined;
             const timer = window.setTimeout(() => setInserted(false), 1400);
             return () => window.clearTimeout(timer);
@@ -704,32 +691,6 @@ window.__ModuleLoader__.load({
               return;
             }
             show(result.url);
-          };
-
-          const copyUrl = () => {
-            if (url === '') return;
-            const done = () => setCopied(true);
-            const failed = () => setError(copy('error.clipboard'));
-            if (navigator.clipboard !== undefined && typeof navigator.clipboard.writeText === 'function') {
-              navigator.clipboard.writeText(url).then(done, failed);
-              return;
-            }
-            try {
-              const carrier = document.createElement('textarea');
-              carrier.value = url;
-              carrier.setAttribute('readonly', 'readonly');
-              carrier.style.position = 'fixed';
-              carrier.style.opacity = '0';
-              document.body.appendChild(carrier);
-              carrier.select();
-              const ok = document.execCommand('copy');
-              carrier.remove();
-              if (ok) done();
-              else failed();
-            } catch (failure) {
-              void failure;
-              failed();
-            }
           };
 
           /** Show one already-validated address without re-reading the draft. */
@@ -949,25 +910,6 @@ window.__ModuleLoader__.load({
                 disabled: url === '',
                 onClick: reloadPage,
               }, '⟳'),
-              h('button', {
-                type: 'button',
-                className: 'dmb-btn dmb-btn-icon',
-                title: copied ? copy('action.copied') : copy('action.copy'),
-                disabled: url === '',
-                onClick: copyUrl,
-              }, copied
-                ? h('svg', {
-                    width: 14, height: 14, viewBox: '0 0 16 16', fill: 'none',
-                    stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round',
-                    strokeLinejoin: 'round', 'aria-hidden': true,
-                  }, h('path', { d: 'M3.4 8.4l3.1 3.1 6.1-6.3' }))
-                : h('svg', {
-                    width: 14, height: 14, viewBox: '0 0 16 16', fill: 'none',
-                    stroke: 'currentColor', strokeWidth: 1.3, strokeLinecap: 'round',
-                    strokeLinejoin: 'round', 'aria-hidden': true,
-                  },
-                  h('rect', { x: 5.2, y: 5.2, width: 8.1, height: 8.1, rx: 1.6 }),
-                  h('path', { d: 'M10.8 5.2V3.7c0-.7-.6-1.3-1.3-1.3H3.7c-.7 0-1.3.6-1.3 1.3v5.8c0 .7.6 1.3 1.3 1.3h1.5' }))),
               h('button', {
                 type: 'button',
                 className: 'dmb-btn dmb-btn-icon',

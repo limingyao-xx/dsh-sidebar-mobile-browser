@@ -1,10 +1,10 @@
 # dsh-sidebar-mobile-browser
 
 给 **DeepSeek Harness（DSH）** 右侧边栏加一个「移动端预览」标签页：按手机 / 平板尺寸打开网页，
-在对话框里用 `@` 或 `/url` 引用当前页面地址，一键复制 URL。
+在对话框里用 `@` 或 `/url` 引用当前页面地址。
 
 A mobile-device preview browser for the DSH right sidebar — device-sized frames, `@`-mention or `/url`
-insertion of the current page URL from the composer, one-click copy.
+insertion of the current page URL from the composer.
 
 - 标签页类型：**移动端预览**（与内置 Browser 并列，不替换它）
 - 设备尺寸：9 个常见预设 + 自定义宽高（180–2560），最近一次尺寸会记住
@@ -18,7 +18,7 @@ insertion of the current page URL from the composer, one-click copy.
 - 工具栏 `⭐` 按钮：把当前页设为**默认主页**（`localStorage`），之后新开的空白标签页自动打开它；再点一次取消
 - 工具栏房屋按钮：**回到默认主页** —— 跨域页面里的站内跳转读不回地址栏，这是"走远了再回去"的可靠路径
 - 工具栏相机按钮：**截图当前页** —— 抓的是设备框里的真实像素（复制到剪贴板，失败则下载 PNG）
-- 工具栏：回车即打开、`⟳` 重载、复制图标（成功后短暂变对勾）、滑块图标切换尺寸栏
+- 工具栏：回车即打开、`⟳` 重载、滑块图标切换尺寸栏
 - 多标签页；切换标签不重载页面（`keepMounted`）；重启 DSH 后能恢复上次打开的页面
 
 ## 安装
@@ -36,7 +36,7 @@ insertion of the current page URL from the composer, one-click copy.
 2. 地址栏输入 `example.com` 或完整 URL，**回车**打开（无单独“打开”按钮）。
 3. 点工具栏最右的**滑块图标**展开尺寸栏：选预设，或选「自定义」直接改宽高数字（回车 / 失焦生效）；
    再点一次收起。默认收起，所以每次新开标签页都从「只有地址栏」的紧凑状态开始。
-4. 工具栏：`⟳` 重载、复制图标复制当前 URL、`@` 把当前 URL 插入对话框、相机图标截图、
+4. 工具栏：`⟳` 重载、`@` 把当前 URL 插入对话框、相机图标截图、
    房屋图标回到默认主页、`⭐` 设为默认主页、滑块图标切换尺寸栏；尺寸栏展开时右侧还有 `⟲` 横竖屏互换。
    桌面端（页面跑在 guest webview 上）时**地址栏随页面跳转实时更新**。
 5. 点 `⭐` 之后，新开的空白标签页会直接打开这个默认主页；空状态里也有「打开默认主页」按钮。
@@ -56,9 +56,9 @@ insertion of the current page URL from the composer, one-click copy.
 | --- | --- |
 | ![默认状态](assets/screenshots/01-default.png) | ![尺寸栏展开](assets/screenshots/02-size.png) |
 
-| 复制成功（图标短暂变对勾） | 换成 iPad mini（768 × 1024） |
-| --- | --- |
-| ![复制成功](assets/screenshots/03-copied.png) | ![iPad mini](assets/screenshots/04-ipad.png) |
+| 换成 iPad mini（768 × 1024） |
+| --- |
+| ![iPad mini](assets/screenshots/03-ipad.png) |
 
 截图不是手绘原型：`test/preview.html` 载入**真实的 `client.js`** 在仿侧边栏的外壳里渲染，
 再由无头 Chrome 截图（生成方法见「开发」）。同一份清单也放在仓库根的 `screenshots.json`，供插件市场读取。
@@ -133,14 +133,11 @@ PAGE="http%3A%2F%2F127.0.0.1%3A8766%2Ftest%2Fpreview-content.html"
   --virtual-time-budget=9000 --screenshot=assets/screenshots/01-default.png "$BASE?url=$PAGE"
 "$CHROME" --headless=new --hide-scrollbars --force-device-scale-factor=2 --window-size=560,1104 \
   --virtual-time-budget=9000 --screenshot=assets/screenshots/02-size.png "$BASE?open=1&url=$PAGE"
-"$CHROME" --headless=new --hide-scrollbars --force-device-scale-factor=2 --window-size=560,1064 \
-  --virtual-time-budget=9000 --screenshot=assets/screenshots/03-copied.png "$BASE?copy=1&url=$PAGE"
 "$CHROME" --headless=new --hide-scrollbars --force-device-scale-factor=2 --window-size=560,1000 \
-  --virtual-time-budget=9000 --screenshot=assets/screenshots/04-ipad.png "$BASE?size=ipad-mini&open=1&url=$PAGE"
+  --virtual-time-budget=9000 --screenshot=assets/screenshots/03-ipad.png "$BASE?size=ipad-mini&open=1&url=$PAGE"
 ```
 
-URL 参数：`url` 要预览的页面、`size` 挂载前写进 `localStorage` 的预设 id、`open=1` 展开尺寸栏、
-`copy=1` 点一次复制并冻结提示定时器（为了让「已复制」的对勾停在画面里）。
+URL 参数：`url` 要预览的页面、`size` 挂载前写进 `localStorage` 的预设 id、`open=1` 展开尺寸栏。
 
 ## 发布
 
