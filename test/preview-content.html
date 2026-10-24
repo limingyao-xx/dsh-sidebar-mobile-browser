@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Acme Store — 无线降噪耳机</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #f7f8fa; color: #14161a;
+    font: 15px/1.55 -apple-system, "Segoe UI", Roboto, "Microsoft YaHei", sans-serif; }
+  header { display: flex; align-items: center; gap: 10px; padding: 14px 16px; background: #fff;
+    border-bottom: 1px solid #e8eaee; position: sticky; top: 0; }
+  header .brand { font-weight: 650; letter-spacing: -.01em; }
+  header .spacer { margin-left: auto; opacity: .5; font-size: 13px; }
+  .hero { padding: 18px 16px 8px; }
+  .hero .tag { display: inline-block; padding: 3px 8px; border-radius: 999px; background: #eaf1ff;
+    color: #2458d6; font-size: 11px; font-weight: 600; }
+  .hero h1 { margin: 10px 0 6px; font-size: 22px; letter-spacing: -.02em; }
+  .hero p { margin: 0; color: #5b6270; font-size: 13px; }
+  .card { margin: 14px 16px; background: #fff; border: 1px solid #e8eaee; border-radius: 14px; overflow: hidden; }
+  .card .art { height: 132px; background: linear-gradient(135deg, #dfe8ff, #f2f4f8 65%); display: grid; place-items: center; color: #58627a; font-size: 12px; }
+  .card .body { padding: 12px 14px 14px; }
+  .card .row { display: flex; align-items: baseline; gap: 8px; }
+  .card .price { font-weight: 700; }
+  .card .was { color: #98a0ae; font-size: 12px; text-decoration: line-through; }
+  .card ul { margin: 8px 0 0; padding-left: 18px; color: #5b6270; font-size: 13px; }
+  .cta { margin: 16px; display: flex; gap: 10px; }
+  .cta .primary { flex: 1; text-align: center; padding: 12px; border-radius: 12px; background: #2458d6; color: #fff; font-weight: 600; }
+  .cta .ghost { padding: 12px 16px; border-radius: 12px; border: 1px solid #d9dde5; color: #3b4250; }
+  footer { padding: 10px 16px 24px; color: #98a0ae; font-size: 12px; text-align: center; }
+</style>
+</head>
+<body>
+<header><span class="brand">ACME Store</span><span class="spacer">购物车 · 2</span></header>
+<div class="hero">
+  <span class="tag">新品</span>
+  <h1>Acme 无线降噪耳机 Pro</h1>
+  <p>自适应降噪 · 38 小时续航 · 空间音频</p>
+</div>
+<div class="card">
+  <div class="art">产品主图</div>
+  <div class="body">
+    <div class="row"><span class="price">¥1,299</span><span class="was">¥1,599</span></div>
+    <ul>
+      <li>自适应主动降噪，通勤与办公双模式</li>
+      <li>记忆海绵耳罩，久戴不压耳</li>
+      <li>双设备连接，通话六麦克风阵列</li>
+    </ul>
+  </div>
+</div>
+<div class="cta"><span class="primary">立即购买</span><span class="ghost">加入清单</span></div>
+<footer>演示页面 · 仅用于插件截图</footer>
+</body>
+</html>

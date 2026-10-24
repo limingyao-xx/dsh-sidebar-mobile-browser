@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>mobile preview — screenshot harness</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #14161b; color: #e8e8ea;
+    font: 13px/1.5 -apple-system, "Segoe UI", Roboto, "Microsoft YaHei", sans-serif; }
+  #shell { position: absolute; inset: 0; display: flex; flex-direction: column; background: #1c1f25; }
+  #tabs { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid #2a2f37; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 8px;
+    background: #2b313a; border: 1px solid #3a414c; font-size: 12px; }
+  .chip .x { opacity: .45; font-size: 11px; }
+  .plus { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 8px;
+    border: 1px dashed #3d444f; opacity: .65; }
+  #root { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+</style>
+</head>
+<body>
+<div id="shell">
+  <div id="tabs">
+    <div class="chip">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <rect x="4" y="1.5" width="8" height="13" rx="2" stroke="currentColor" stroke-width="1.3"></rect>
+        <path d="M6.6 3.4h2.8" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"></path>
+        <circle cx="8" cy="12.2" r="0.9" fill="currentColor"></circle>
+      </svg>
+      移动端预览<span class="x">✕</span>
+    </div>
+    <div class="plus">+</div>
+  </div>
+  <div id="root"></div>
+</div>
+<script>
+/*
+ * Screenshot harness: mounts the plugin's real client.js in a page that looks
+ * like the sidebar, so the storefront screenshots show the shipped component
+ * and stylesheet rather than a mock-up. It carries a tiny React-compatible
+ * renderer (createElement / hooks / DOM commit) because the harness cannot
+ * import the harness's own React; nothing here ships with the plugin.
+ *
+ * URL parameters:
+ *   url     page to preview (must be http/https)
+ *   size    preset id to remember before mounting (e.g. ipad-mini)
+ *   open    "1" opens the size row after mounting
+ *   copy    "1" clicks the copy button so the checkmark state is captured
+ */
+(function () {
+  const state = [];
+  let cursor = 0;
+  let mount = null;
+  let scheduled = false;
+
+  function render() {
+    if (mount === null) return;
+    cursor = 0;
+    const effects = [];
+    const tree = (function () {
+      const saved = React.__collect;
+      React.__collect = effects;
+      const out = mount.component(mount.props);
+      React.__collect = saved;
+      return out;
+    })();
+    const node = toDom(tree);
+    mount.root.replaceChildren(node);
+    for (const effect of effects) effect();
+  }
+
+  function schedule() {
+    if (scheduled) return;
+    scheduled = true;
+    queueMicrotask(() => { scheduled = false; render(); });
+  }
+
+  const React = {
+    createElement(type, props, ...children) {
+      return { type, props: props === null || props === undefined ? {} : props, children: children.flat(Infinity) };
+    },
+    useMemo(fn) { return fn(); },
+    useState(initial) {
+      const slot = cursor++;
+      if (!(slot in state)) state[slot] = typeof initial === 'function' ? initial() : initial;
+      const set = (next) => {
+        const value = typeof next === 'function' ? next(state[slot]) : next;
+        if (Object.is(value, state[slot])) return;
+        state[slot] = value;
+        schedule();
+      };
+      return [state[slot], set];
+    },
+    useRef(initial) {
+      const slot = cursor++;
+      if (!(slot in state)) state[slot] = { current: initial === undefined ? null : initial };
+      return state[slot];
+    },
+    useEffect(fn, deps) {
+      const slot = cursor++;
+      const previous = state[slot];
+      const changed = !Array.isArray(deps) || previous === undefined || deps.length !== previous.length
+        || deps.some((value, index) => !Object.is(value, previous[index]));
+      if (changed) state[slot] = deps;
+      if (changed && Array.isArray(React.__collect)) React.__collect.push(fn);
+    },
+    __collect: null,
+  };
+
+  const SVG = 'http://www.w3.org/2000/svg';
+  function toDom(node, inSvg) {
+    if (node === null || node === undefined || node === true || node === false) return document.createTextNode('');
+    if (typeof node === 'string' || typeof node === 'number') return document.createTextNode(String(node));
+    if (Array.isArray(node)) {
+      const fragment = document.createDocumentFragment();
+      for (const child of node) fragment.appendChild(toDom(child, inSvg));
+      return fragment;
+    }
+    if (typeof node.type === 'function') {
+      return toDom(node.type(Object.assign({}, node.props, { children: node.children })), inSvg);
+    }
+    const svg = inSvg === true || node.type === 'svg';
+    const element = svg ? document.createElementNS(SVG, node.type) : document.createElement(node.type);
+    const deferred = {};
+    for (const [key, value] of Object.entries(node.props)) {
+      if (key === 'children' || value === undefined || value === null) continue;
+      if (key === 'className') { element.setAttribute('class', value); continue; }
+      if (key === 'style' && typeof value === 'object') {
+        for (const [name, raw] of Object.entries(value)) element.style.setProperty(name, String(raw));
+        continue;
+      }
+      if (key === 'ref') { if (value !== null && typeof value === 'object') value.current = element; continue; }
+      if (/^on[A-Z]/u.test(key)) { element.addEventListener(key.slice(2).toLowerCase(), value); continue; }
+      if (key === 'value') { deferred.value = String(value); continue; }
+      if (key === 'disabled' || key === 'checked' || key === 'readOnly' || key === 'selected') {
+        if (value) element.setAttribute(key.toLowerCase(), ''); else element.removeAttribute(key.toLowerCase());
+        continue;
+      }
+      element.setAttribute(key, String(value));
+    }
+    for (const child of node.children) element.appendChild(toDom(child, svg));
+    if (deferred.value !== undefined) {
+      element.value = deferred.value;
+      element.setAttribute('value', deferred.value);
+    }
+    return element;
+  }
+
+  window.__ModuleLoader__ = { load(declaration) { window.__declaration = declaration; } };
+  window.React = React;
+  window.__harness = { mount, schedule, render };
+
+  /* Real timers, so the harness can wait while plugin timers are frozen below. */
+  const realTimeout = window.setTimeout.bind(window);
+  const wait = (ms) => new Promise((resolve) => realTimeout(resolve, ms));
+  /* Transient "已复制" / "已插入" states reset after ~1.4s; keep them for the shot. */
+  const pluginTimeout = window.setTimeout;
+  window.setTimeout = (fn, delay, ...rest) => (window.__freeze === true && Number(delay) < 2500
+    ? 0
+    : pluginTimeout.call(window, fn, delay, ...rest));
+  /* Clipboard writes need a real gesture; the shot only needs the success path. */
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async () => undefined } });
+
+  window.addEventListener('DOMContentLoaded', async () => {
+    const params = new URLSearchParams(location.search);
+    const size = params.get('size');
+    if (size !== null) {
+      const preset = { 'iphone-se': [375, 667], 'iphone-14': [390, 844], 'ipad-mini': [768, 1024] }[size];
+      if (preset !== undefined) {
+        localStorage.setItem('dsh.sidebar-mobile-browser.size', JSON.stringify({ preset: size, width: preset[0], height: preset[1] }));
+      }
+    }
+
+    const registered = { slots: [], types: [], sources: [], commands: [], locale: null };
+    const ctx = {
+      get: (name) => (name === 'sessions' ? ctx.sessions : undefined),
+      sessions: {
+        scope: () => ({
+          get: (name) => (name === 'conversation'
+            ? { input: { shell: () => ({ actions: { captureInsertion: () => ({ draftRev: 1 }), insertText: () => true } }) } }
+            : undefined),
+        }),
+      },
+      commandUi: { register: (contribution) => { registered.commands.push(contribution); return () => {}; } },
+      locale: {
+        register: (ns, dicts) => { registered.locale = dicts; return () => {}; },
+        bind: () => (key, values) => {
+          const dict = registered.locale === null ? {} : registered.locale.zh;
+          const text = Object.prototype.hasOwnProperty.call(dict, key) ? dict[key] : key;
+          return values === undefined ? text : String(text).replace(/\{(\w+)\}/gu, (all, name) => (name in values ? String(values[name]) : all));
+        },
+      },
+      effect: (fn) => { fn(); },
+      slots: {
+        inject: (name, callback) => callback(),
+        register: (spec, component) => { registered.slots.push({ spec, component }); return () => {}; },
+      },
+      sidebarRightTabs: { register: (definition) => { registered.types.push(definition); return () => {}; } },
+      sidebarRight: { openTab: (kind, options) => { registered.opened = { kind, options }; } },
+      inputTriggers: { registerSource: (source) => { registered.sources.push(source); return () => {}; } },
+    };
+
+    const declaration = window.__declaration;
+    if (declaration === undefined) throw new Error('client.js did not call __ModuleLoader__.load');
+    const bundle = declaration.factory((id) => {
+      if (id === 'react') return React;
+      throw new Error(`unexpected require: ${id}`);
+    });
+    bundle.apply(ctx);
+
+    const body = registered.slots.find((row) => row.spec.name === 'sidebar.right.pane.tab');
+    if (body === undefined) throw new Error('the tab body slot was not registered');
+
+    mount = {
+      root: document.getElementById('root'),
+      component: body.component,
+      props: {
+        sessionId: 'screenshot',
+        t: ctx.locale.bind(),
+        useTabInfo: () => ({ tab: { id: 'shot-1', kind: 'mobile-browser', navigation: { params: { url: params.get('url') || '' } } } }),
+      },
+    };
+    render();
+
+    const clickByTitle = (prefix) => {
+      const target = [...document.querySelectorAll('button')].find((button) => (button.getAttribute('title') || '').startsWith(prefix));
+      if (target === undefined) throw new Error(`no toolbar button titled ${prefix}`);
+      target.click();
+      return true;
+    };
+
+    await wait(120);
+    if (params.get('open') === '1') { clickByTitle('尺寸设置'); await wait(80); }
+    if (params.get('copy') === '1') { window.__freeze = true; clickByTitle('复制 URL'); await wait(80); }
+    window.__harnessReady = true;
+  });
+})();
+</script>
+<script src="../client.js"></script>
+</body>
+</html>

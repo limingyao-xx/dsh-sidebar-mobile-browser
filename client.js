@@ -521,8 +521,11 @@ window.__ModuleLoader__.load({
                 onChange: (event) => pickPreset(event.target.value),
                 title: copy('device.label'),
               }, [
-                ...PRESETS.map((preset) => h('option', { key: preset.id, value: preset.id },
-                  `${preset.label} · ${preset.width}×${preset.height}`)),
+                ...PRESETS.map((preset) => h('option', {
+                  key: preset.id,
+                  value: preset.id,
+                  title: `${preset.width}×${preset.height}`,
+                }, preset.label)),
                 h('option', { key: 'custom', value: 'custom' }, copy('device.custom')),
               ]),
               h('input', {

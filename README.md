@@ -38,6 +38,19 @@ insertion of the current page URL from the composer, one-click copy.
    或输入 `/url` 回车 —— 当前页面地址直接写进输入框，草稿里已有的内容会保留。
    两者都只在**该会话已经打开过预览页**时出现。
 
+## 截图
+
+| 默认：尺寸栏收起 | 尺寸栏展开：预设 + 宽高 + 横竖屏 |
+| --- | --- |
+| ![默认状态](assets/screenshots/01-default.png) | ![尺寸栏展开](assets/screenshots/02-size.png) |
+
+| 复制成功（图标短暂变对勾） | 换成 iPad mini（768 × 1024） |
+| --- | --- |
+| ![复制成功](assets/screenshots/03-copied.png) | ![iPad mini](assets/screenshots/04-ipad.png) |
+
+截图不是手绘原型：`test/preview.html` 载入**真实的 `client.js`** 在仿侧边栏的外壳里渲染，
+再由无头 Chrome 截图（生成方法见「开发」）。同一份清单也放在仓库根的 `screenshots.json`，供插件市场读取。
+
 ## 兼容性
 
 - 需要 DSH `0.2.x`（在 `0.2.1-rc.2` 上验证），Web 与 Desktop 两种 profile 都可用。
@@ -81,6 +94,33 @@ npm test         # 无 DSH 环境下的冒烟测试：shim 掉 React/window，�
 - **改完 `client.js` 不会热替换已加载的模块**：Desktop 需要退出并重新打开应用（正式版没有“重新加载页面”菜单项），
   Web 端刷新页面即可。改了 `package.json` / `cordis.patch.yml` 需要重新安装 bundle。
 - 版本：语义化版本，破坏性改动用 minor。
+
+### 重新生成截图
+
+`test/preview.html` 是一个仿右侧边栏的外壳：它注入一个极小的 React 兼容层与假的 DSH 上下文，
+加载本仓的 `client.js` 并把标签页正文挂上去，因此截到的是**真正会跑的那份代码与样式**。
+`test/preview-content.html` 是截图里被预览的示例页面。
+
+```bash
+# 1) 在仓库根起一个静态服务器（iframe 需要 http，file:// 会被插件的地址校验挡住）
+python -m http.server 8766 --bind 127.0.0.1
+
+# 2) 逐张开截图（Chrome 路径按本机调整）
+CHROME="/c/Program Files/Google/Chrome/Application/chrome.exe"
+BASE="http://127.0.0.1:8766/test/preview.html"
+PAGE="http%3A%2F%2F127.0.0.1%3A8766%2Ftest%2Fpreview-content.html"
+"$CHROME" --headless=new --hide-scrollbars --force-device-scale-factor=2 --window-size=560,1064 \
+  --virtual-time-budget=9000 --screenshot=assets/screenshots/01-default.png "$BASE?url=$PAGE"
+"$CHROME" --headless=new --hide-scrollbars --force-device-scale-factor=2 --window-size=560,1104 \
+  --virtual-time-budget=9000 --screenshot=assets/screenshots/02-size.png "$BASE?open=1&url=$PAGE"
+"$CHROME" --headless=new --hide-scrollbars --force-device-scale-factor=2 --window-size=560,1064 \
+  --virtual-time-budget=9000 --screenshot=assets/screenshots/03-copied.png "$BASE?copy=1&url=$PAGE"
+"$CHROME" --headless=new --hide-scrollbars --force-device-scale-factor=2 --window-size=560,1000 \
+  --virtual-time-budget=9000 --screenshot=assets/screenshots/04-ipad.png "$BASE?size=ipad-mini&open=1&url=$PAGE"
+```
+
+URL 参数：`url` 要预览的页面、`size` 挂载前写进 `localStorage` 的预设 id、`open=1` 展开尺寸栏、
+`copy=1` 点一次复制并冻结提示定时器（为了让「已复制」的对勾停在画面里）。
 
 ## 发布
 
