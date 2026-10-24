@@ -149,6 +149,7 @@ window.__ModuleLoader__.load({
 .dmb-device{position:relative;border-radius:16px;overflow:hidden;background:#fff;box-shadow:0 6px 24px color-mix(in srgb,currentColor 22%,transparent),0 0 0 1px color-mix(in srgb,currentColor 18%,transparent);flex:0 0 auto}
 .dmb-frame{position:absolute;top:0;left:0;border:0;background:#fff;transform-origin:top left}
 .dmb-frame{display:block}
+.dmb-guest{transform-origin:top left;overflow:hidden}
 .dmb-pending{inset:0;display:flex;align-items:center;justify-content:center;color:var(--dsw-alias-label-secondary);font-size:12px}
 .dmb-empty{max-width:280px;text-align:center;opacity:.72;line-height:1.6}
 .dmb-empty-title{font-weight:600;margin-bottom:4px}
@@ -472,15 +473,26 @@ window.__ModuleLoader__.load({
           const [sizeOpen, setSizeOpen] = React.useState(false);
           const [scale, setScale] = React.useState(1);
           const stageRef = React.useRef(null);
-          /** The webview element when the desktop shell hosts the page, else null. */
+          /** The guest element when the desktop shell hosts the page, else null. */
           const frameRef = React.useRef(null);
+          /** The host box the guest is appended to (commit time, not render time). */
           const bridge = desktopBridge();
           /**
-           * `off` — no bridge, so an `<iframe>` carries the page (Web GUI).
-           * `pending` — waiting for the main process to approve a guest.
-           * `ready` — the webview exists and reports its own navigations.
+           * `off` - no bridge, so an `<iframe>` carries the page (Web GUI).
+           * `pending` - waiting for the main process to approve a guest.
+           * `ready` - the shell issued a lease and the webview may be built.
            */
           const [guest, setGuest] = React.useState(() => (bridge === undefined ? { phase: 'off' } : { phase: 'pending' }));
+          /** True once the guest finished attaching and accepts navigation. */
+          const [attached, setAttached] = React.useState(false);
+          const guestRef = React.useRef(guest);
+          guestRef.current = guest;
+          const urlRef = React.useRef(url);
+          urlRef.current = url;
+          const sizeRef = React.useRef(size);
+          sizeRef.current = size;
+          const apiRef = React.useRef(null);
+          apiRef.current = { setUrl, setDraft, setError, setAttached };
 
           React.useEffect(() => {
             if (bridge === undefined || guest.phase !== 'pending') return undefined;
@@ -508,14 +520,24 @@ window.__ModuleLoader__.load({
             if (bridge !== undefined && guest.phase === 'ready') void bridge.release(guest.lease);
           }, [guest.phase]);
 
-          /** Ask the guest to show one page; the element ships with `about:blank`. */
+          /** The guest's own URL, without letting a detached element throw. */
+          const guestUrl = (element) => {
+            let shown = '';
+            try {
+              shown = element !== null && typeof element.getURL === 'function' ? String(element.getURL()) : '';
+            } catch (failure) {
+              void failure;
+            }
+            return shown;
+          };
+
+          /** Ask the guest to show one page; it is born on `about:blank`. */
           const navigate = (target) => {
             const element = frameRef.current;
-            if (element === null || guest.phase !== 'ready') return;
-            if (element.dataset.ready !== '1' || target === '') return;
-            const current = typeof element.getURL === 'function' ? element.getURL() : '';
-            if (current === target) return;
-            if (typeof element.loadURL !== 'function') return;
+            const current = guestRef.current;
+            if (element === null || current === null || current.phase !== 'ready' || target === '') return;
+            if (element.dataset.attached !== '1' || typeof element.loadURL !== 'function') return;
+            if (guestUrl(element) === target) return;
             try {
               void element.loadURL(target).catch(() => {});
             } catch (failure) {
@@ -524,76 +546,105 @@ window.__ModuleLoader__.load({
           };
 
           /**
-           * Keep the address bar honest: the webview reports every main-frame
-           * navigation, which an `<iframe>` can never do across origins.
+           * Build the guest at commit time, by hand rather than through JSX: the shell
+           * approves the attach only when the lease name, the approved partition and
+           * the `about:blank#<lease>` source already agree, so those attributes have
+           * to be in place - in that order - before the element enters the DOM.
            */
-          React.useEffect(() => {
-            const element = frameRef.current;
-            if (guest.phase !== 'ready' || element === null) return undefined;
-            const sync = () => {
-              const next = typeof element.getURL === 'function' ? element.getURL() : '';
-              if (next === '' || next === url) return;
-              setUrl(next);
-              setDraft(next);
-            };
-            const inPage = (event) => {
-              if (event === undefined || event.isMainFrame !== false) sync();
-            };
-            /** Phone, tablet and desktop start over in a new identity class. */
-            const uaClass = size.width >= 1024 ? '2' : size.width >= 700 ? '1' : '0';
-            const adopt = () => {
-              element.dataset.ready = '1';
-              if (element.dataset.uaClass !== uaClass) {
-                element.dataset.uaClass = uaClass;
-                try {
-                  element.setUserAgent(userAgentFor(size));
-                } catch (failure) {
-                  void failure;
+          const mountGuest = React.useRef(null);
+          if (mountGuest.current === null) {
+            mountGuest.current = (node) => {
+              if (node === null) return undefined;
+              const current = guestRef.current;
+              if (current === null || current.phase !== 'ready') return undefined;
+              if (node.dataset.wired === '1') return undefined;
+              node.dataset.wired = '1';
+              const element = document.createElement('webview');
+              element.setAttribute('name', current.lease);
+              element.setAttribute('partition', current.partition);
+              element.setAttribute('allowpopups', '');
+              element.setAttribute('src', `about:blank#${current.lease}`);
+              element.setAttribute('style', 'width:100%;height:100%;border:0;background:#fff');
+              frameRef.current = element;
+              const api = apiRef.current;
+              const sync = () => {
+                const next = guestUrl(element);
+                if (next === '' || next === urlRef.current) return;
+                api.setUrl(next);
+                api.setDraft(next);
+              };
+              const inPage = (event) => {
+                if (event === undefined || event.isMainFrame !== false) sync();
+              };
+              const adopt = () => {
+                element.dataset.attached = '1';
+                const measured = sizeRef.current;
+                const uaClass = measured.width >= 1024 ? '2' : measured.width >= 700 ? '1' : '0';
+                if (element.dataset.uaClass !== uaClass) {
+                  element.dataset.uaClass = uaClass;
+                  try {
+                    element.setUserAgent(userAgentFor(measured));
+                  } catch (failure) {
+                    void failure;
+                  }
                 }
-              }
-              navigate(url);
+                api.setAttached(true);
+                navigate(urlRef.current);
+              };
+              const failed = (event) => {
+                if (event !== undefined && event.isMainFrame === false) return;
+                const code = event !== undefined && typeof event.errorCode === 'number' ? String(event.errorCode) : '';
+                api.setError(copy('error.frame', { code }));
+              };
+              element.addEventListener('did-navigate', sync);
+              element.addEventListener('did-navigate-in-page', inPage);
+              element.addEventListener('did-fail-load', failed);
+              element.addEventListener('dom-ready', adopt);
+              node.appendChild(element);
+              return () => {
+                element.removeEventListener('did-navigate', sync);
+                element.removeEventListener('did-navigate-in-page', inPage);
+                element.removeEventListener('did-fail-load', failed);
+                element.removeEventListener('dom-ready', adopt);
+                if (element.parentNode !== null) element.parentNode.removeChild(element);
+                frameRef.current = null;
+              };
             };
-            const started = (event) => {
-              if (event === undefined || event.isMainFrame !== false) element.dataset.nav = '1';
-            };
-            const failed = (event) => {
-              if (event !== undefined && event.isMainFrame === false) return;
-              const code = event !== undefined && typeof event.errorCode === 'number' ? String(event.errorCode) : '';
-              setError(copy('error.frame', { code }));
-            };
-            element.addEventListener('did-navigate', sync);
-            element.addEventListener('did-navigate-in-page', inPage);
-            element.addEventListener('did-start-navigation', started);
-            element.addEventListener('did-fail-load', failed);
-            element.addEventListener('dom-ready', adopt);
-            return () => {
-              element.removeEventListener('did-navigate', sync);
-              element.removeEventListener('did-navigate-in-page', inPage);
-              element.removeEventListener('did-start-navigation', started);
-              element.removeEventListener('did-fail-load', failed);
-              element.removeEventListener('dom-ready', adopt);
-            };
-          }, [guest.phase, size.width, size.height]);
+          }
 
           /** Follow the address bar: a new URL loads once the guest is attached. */
           React.useEffect(() => {
+            if (!attached) return;
             navigate(url);
-          }, [url, guest.phase]);
+          }, [url, attached]);
+
+          /** A size edit that crosses phone/tablet/desktop restarts in a new class. */
+          React.useEffect(() => {
+            const element = frameRef.current;
+            if (!attached || element === null) return;
+            const uaClass = size.width >= 1024 ? '2' : size.width >= 700 ? '1' : '0';
+            if (element.dataset.uaClass === uaClass) return;
+            element.dataset.uaClass = uaClass;
+            try {
+              element.setUserAgent(userAgentFor(size));
+              element.reload();
+            } catch (failure) {
+              void failure;
+            }
+          }, [attached, size.width]);
 
           /**
-           * A guest that never attaches or never starts loading would leave an empty
-           * pane. Give it five seconds, then hand the page back to the iframe carrier.
+           * A guest the shell refuses to attach would leave an empty pane. After six
+           * seconds without leaving `about:blank`, hand the page to the iframe.
            */
           React.useEffect(() => {
             if (guest.phase !== 'ready' || url === '') return undefined;
             const timer = window.setTimeout(() => {
-              const element = frameRef.current;
-              const attached = element !== null && element.dataset.ready === '1';
-              const navigated = element !== null && element.dataset.nav === '1';
-              if (attached && navigated) return;
+              const shown = guestUrl(frameRef.current);
+              if (shown !== '' && !shown.startsWith('about:blank')) return;
               if (bridge !== undefined) void bridge.release(guest.lease);
               setGuest({ phase: 'off' });
-            }, 5000);
+            }, 6000);
             return () => window.clearTimeout(timer);
           }, [guest.phase, url]);
 
@@ -868,16 +919,12 @@ window.__ModuleLoader__.load({
            */
           const carrier = (target) => {
             if (guest.phase === 'ready') {
-              return h('webview', {
-                className: 'dmb-frame',
-                ref: frameRef,
+              return h('div', {
+                className: 'dmb-frame dmb-guest',
+                ref: mountGuest.current,
                 key: guest.lease,
-                name: guest.lease,
-                partition: guest.partition,
-                allowpopups: '',
-                src: `about:blank#${guest.lease}`,
                 style: frameStyle,
-              });
+              }, attached ? null : h('div', { className: 'dmb-pending' }, copy('frame.pending')));
             }
             if (guest.phase === 'pending') {
               return h('div', { className: 'dmb-frame dmb-pending' }, copy('frame.pending'));

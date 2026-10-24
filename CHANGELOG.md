@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.4.2 — 2026-10-24
+
+**修复**
+
+- 桌面端退回 iframe（工具栏没有 `‹` `›`、地址栏不动）：webview 是由 `will-attach-webview` 放行的，
+  主进程要求「lease 名 + 批准的 partition + `about:blank#<lease>`」在**挂载那一刻**就已一致，
+  否则直接 `preventDefault`。React 建元素时属性写入顺序不受控，导致放行失败、只剩一块空面板。
+  改为在 ref 回调里手工建元素：按 `name` → `partition` → `allowpopups` → `src` 的顺序设好再插进 DOM。
+- 兜底判据改成「看结果」而不是「看事件」：6 秒后仍停在 `about:blank` 才退回 iframe，
+  避免事件回调比监听器更早到达时误判（上一版就是这样误退了 iframe）。
+
+**测试**
+
+- `npm test` 的 DOM stub 扩成可建元素 / 挂子节点 / 触发事件；新增断言：元素带 lease 名与批准的 partition、
+  以 `about:blank#<lease>` 起手、`dom-ready` 后采用手机 UA 并用 `loadURL` 打开页面、
+  `did-navigate-in-page` 会把新地址回填到地址栏。
+
 ## v0.4.1 — 2026-10-24
 
 **修复**

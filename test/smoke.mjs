@@ -9,9 +9,39 @@ const source = fs.readFileSync(file, 'utf8');
 
 let declaration;
 const storage = new Map();
+
+/** Tiny DOM stand-in: enough to build and drive the guest webview element. */
+function fakeNode(tag) {
+  const node = {
+    tag,
+    type: tag,
+    props: {},
+    children: [],
+    parentNode: null,
+    dataset: {},
+    attrs: {},
+    listeners: {},
+    style: {},
+    textContent: '',
+    setAttribute(name, value) { node.attrs[name] = String(value); },
+    addEventListener(name, fn) { (node.listeners[name] ??= []).push(fn); },
+    removeEventListener(name, fn) { node.listeners[name] = (node.listeners[name] ?? []).filter((it) => it !== fn); },
+    appendChild(child) { child.parentNode = node; node.children.push(child); return child; },
+    removeChild(child) { node.children = node.children.filter((it) => it !== child); child.parentNode = null; },
+    remove() { if (node.parentNode !== null) node.parentNode.removeChild(node); },
+    select() {},
+    querySelector(selector) { return node.children.find((it) => it.tag === selector) ?? null; },
+    getURL() { return node.url ?? node.attrs.src ?? 'about:blank'; },
+    loadURL(target) { node.url = String(target); return Promise.resolve(); },
+    setUserAgent(agent) { node.ua = String(agent); },
+    reload() { node.reloads = (node.reloads ?? 0) + 1; },
+  };
+  return node;
+}
+
 const documentShim = {
   querySelector: () => null,
-  createElement: () => ({ setAttribute() {}, remove() {}, style: {}, select() {}, textContent: '' }),
+  createElement: (tag) => fakeNode(tag),
   head: { appendChild() {} },
   body: { appendChild() {}, removeChild() {} },
   execCommand: () => true,
@@ -40,7 +70,16 @@ const hookStore = [];
 /** Assigned once the body component is resolved; the test calls it after a click. */
 let rerender = () => { throw new Error('rerender() ran before the body was resolved'); };
 const React = {
-  createElement: (type, props, ...children) => ({ type, props: props ?? {}, children }),
+  createElement: (type, props, ...children) => {
+    const node = fakeNode(typeof type === 'string' ? type : 'component');
+    node.type = type;
+    node.props = props ?? {};
+    node.children = children;
+    const ref = node.props.ref;
+    if (typeof ref === 'function') ref(node);
+    else if (ref !== null && typeof ref === 'object') ref.current = node;
+    return node;
+  },
   useMemo: (fn) => fn(),
   useState: (initial) => {
     const slot = hookCursor++;
@@ -340,20 +379,49 @@ await Promise.resolve();
 await Promise.resolve();
 hookCursor = 0;
 const bridged = body(driftProps);
-let guestNode;
+let hostNode;
 walk(bridged, (node) => {
-  if (guestNode === undefined && node.type === 'webview') guestNode = node;
+  if (hostNode === undefined && node.props.className === 'dmb-frame dmb-guest') hostNode = node;
 });
-if (guestNode === undefined) throw new Error('expected a webview once the lease arrives');
-console.log('guest webview:', guestNode.props.partition, guestNode.props.name);
-if (guestNode.props.partition !== 'dsh-sidebar-browser-test') throw new Error('the webview must carry the approved partition');
-if (guestNode.props.name !== 'lease-test') throw new Error('the webview must carry the lease as its name');
-// The element is created on about:blank and navigated by loadURL once it attaches:
-// setting src at creation is what left the pane empty.
-if (guestNode.props.src !== 'about:blank#lease-test') throw new Error('the webview must start on about:blank');
+if (hostNode === undefined) throw new Error('expected the guest host box once the lease arrives');
+const guestElement = hostNode.children.find((child) => child !== null && typeof child === 'object' && child.tag === 'webview');
+if (guestElement === undefined) throw new Error('expected the guest webview inside its host');
+// The shell approves the attach only when lease name, partition and the
+// about:blank source already agree — attribute order is load-bearing.
+if (guestElement.attrs.name !== 'lease-test') throw new Error('the webview must carry the lease as its name');
+if (guestElement.attrs.partition !== 'dsh-sidebar-browser-test') throw new Error('the webview must carry the approved partition');
+if (guestElement.attrs.src !== 'about:blank#lease-test') throw new Error('the webview must start on about:blank');
+console.log('guest webview: lease, approved partition, about:blank source');
+
+// Simulate the attach: dom-ready is when the element may be navigated at all.
+for (const run of guestElement.listeners['dom-ready'] ?? []) run();
+if (guestElement.dataset.attached !== '1') throw new Error('dom-ready must mark the guest attached');
+if (String(guestElement.ua ?? '').indexOf('iPhone') < 0) throw new Error('the guest must adopt a phone User-Agent');
+const seededPage = driftProps.useTabInfo().tab.navigation.params.url;
+if (guestElement.url !== seededPage) throw new Error(`the guest must load the page, got ${String(guestElement.url)}`);
+console.log('guest webview: attached, phone UA, page loaded by loadURL');
+
+// A navigation inside the page is what an iframe can never report.
+const guestUrlBefore = guestElement.url;
+for (const run of guestElement.listeners['did-navigate'] ?? []) run();
+if (guestElement.url !== guestUrlBefore) throw new Error('did-navigate must not invent a URL');
+guestElement.url = 'https://other.test/deep/link';
+for (const run of guestElement.listeners['did-navigate-in-page'] ?? []) run();
+hookCursor = 0;
+const mirrored = body(driftProps);
+let addressNode;
+walk(mirrored, (node) => {
+  if (addressNode === undefined && node.props.className === 'dmb-url') addressNode = node;
+});
+if (addressNode === undefined) throw new Error('expected an address bar');
+if (addressNode.props.value !== 'https://other.test/deep/link') {
+  throw new Error(`the address bar must follow the guest, got ${String(addressNode.props.value)}`);
+}
+console.log('guest webview: in-page navigation is mirrored into the address bar');
+
 if (findButtonByTitle(bridged, 'action.back') === undefined) throw new Error('a webview tab offers history buttons');
 if (findButtonByTitle(bridged, 'action.forward') === undefined) throw new Error('a webview tab offers forward navigation');
-console.log('guest webview: history buttons and approved partition');
+console.log('guest webview: history buttons');
 delete globalThis.window.dshDesktop;
 
 console.log('SMOKE_OK');

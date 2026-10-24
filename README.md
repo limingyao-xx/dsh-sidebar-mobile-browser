@@ -95,6 +95,7 @@ insertion of the current page URL from the composer, one-click copy.
 | `ctx.commandUi.register({ name: 'url', ui: { kind: 'action' } })` | `/url` 快捷指令，把当前页面地址写进输入框 |
 | `ctx.sessions.scope(id)` → `conversation.input.shell(id).actions` | 插入文本用的公开 action face（先 `captureInsertion()` 取光标 span，再 `insertText()`） |
 | `window.dshDesktop.browser.acquire()` / `release()` | 桌面端申请 guest webview（与内置 Browser 同一通道），拿不到就用 iframe |
+| `will-attach-webview` 的放行条件 | 元素挂进 DOM 那一刻必须已带 `name=<lease>`、`partition=<批准的>`、`src=about:blank#<lease>`；顺序或时机不对会被 `preventDefault`（就是「一片空白」的成因），所以元素在 ref 回调里手工创建 |
 | `ctx.locale.register()` | 中英文案内置 |
 
 `index.js` 只是空的 Host 半边（bundle 行需要它）；全部能力在 `client.js`。
