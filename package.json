@@ -4,6 +4,7 @@
   "description": "Mobile-device preview browser for the DSH right sidebar: pick a phone or tablet size, @-mention or /url-insert the page URL from the composer, copy the URL in one click.",
   "type": "module",
   "license": "MIT",
+  "author": "10301139@qq.com",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/OWNER/dsh-sidebar-mobile-browser.git"
