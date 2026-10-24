@@ -1,15 +1,17 @@
 # dsh-sidebar-mobile-browser
 
 给 **DeepSeek Harness（DSH）** 右侧边栏加一个「移动端预览」标签页：按手机 / 平板尺寸打开网页，
-在对话框里用 `@` 引用当前页面地址，一键复制 URL。
+在对话框里用 `@` 或 `/url` 引用当前页面地址，一键复制 URL。
 
-A mobile-device preview browser for the DSH right sidebar — device-sized frames, `@`-mention of the
-current page URL from the composer, one-click copy.
+A mobile-device preview browser for the DSH right sidebar — device-sized frames, `@`-mention or `/url`
+insertion of the current page URL from the composer, one-click copy.
 
 - 标签页类型：**移动端预览**（与内置 Browser 并列，不替换它）
 - 设备尺寸：9 个常见预设 + 自定义宽高（180–2560），最近一次尺寸会记住
 - 页面超出可用高度时**等比缩放**，不改 iframe 视口宽高（看到的视口就是选定的设备宽度）
 - `@` 候选：本会话预览过的页面，最近一个标「当前页面地址」，选中即插入纯文本 URL
+- `/url` 快捷指令：选中即把当前页面地址写进输入框（不用开 `@` 菜单、不用鼠标）
+- 工具栏 `@` 按钮：同一件事的一键版，插到光标处，原有草稿不动
 - 工具栏：回车即打开、`⟳` 重载、复制图标（成功后短暂变对勾）、`⟲` 横竖屏切换
 - 多标签页；切换标签不重载页面（`keepMounted`）；重启 DSH 后能恢复上次打开的页面
 
@@ -27,15 +29,18 @@ current page URL from the composer, one-click copy.
 1. 「+」→ **移动端预览**，或直接点这个标签页类型。
 2. 地址栏输入 `example.com` 或完整 URL，**回车**打开（无单独“打开”按钮）。
 3. 尺寸栏选预设，或选「自定义」直接改宽高数字（回车 / 失焦生效）。
-4. 工具栏：`⟳` 重载、复制图标复制当前 URL、`⟲` 横竖屏互换。
+4. 工具栏：`⟳` 重载、复制图标复制当前 URL、`@` 把当前 URL 插入对话框、`⟲` 横竖屏互换。
 5. 地址栏右侧书签按钮可回跳本会话预览过的页面。
-6. 对话框输入 `@` → 选「当前页面地址」即可把 URL 作为纯文本插入。
+6. 对话框输入 `@` → 选「当前页面地址」即可把 URL 作为纯文本插入；
+   或输入 `/url` 回车 —— 当前页面地址直接写进输入框，草稿里已有的内容会保留。
+   两者都只在**该会话已经打开过预览页**时出现。
 
 ## 兼容性
 
 - 需要 DSH `0.2.x`（在 `0.2.1-rc.2` 上验证），Web 与 Desktop 两种 profile 都可用。
-- 只用到公开扩展点：`ctx.sidebarRightTabs` / `ctx.slots` / `ctx.inputTriggers` / `ctx.locale`，
-  不 patch 任何内置模块。
+- 只用到公开扩展点：`ctx.sidebarRightTabs` / `ctx.slots` / `ctx.inputTriggers` / `ctx.commandUi` /
+  `ctx.sessions` / `ctx.locale`，不 patch 任何内置模块。
+- 插入文本走对话面板公开的 action face（`captureInsertion` + `insertText`），不依赖内部事件。
 
 ## 已知局限
 
@@ -53,6 +58,8 @@ current page URL from the composer, one-click copy.
 | `ctx.slots.register({ name: 'sidebar.right.pane.tab', key })` | 渲染标签页主体（尺寸栏 + iframe + 工具栏） |
 | `ctx.slots.register({ name: 'sidebar.right.pane.tab.title', key })` | 标签页标题跟随当前地址的 host |
 | `ctx.inputTriggers.registerSource({ trigger: '@', name: 'webpage' })` | 对话框 `@` 候选（按会话记录预览过的 URL） |
+| `ctx.commandUi.register({ name: 'url', ui: { kind: 'action' } })` | `/url` 快捷指令，把当前页面地址写进输入框 |
+| `ctx.sessions.scope(id)` → `conversation.input.shell(id).actions` | 插入文本用的公开 action face（先 `captureInsertion()` 取光标 span，再 `insertText()`） |
 | `ctx.locale.register()` | 中英文案内置 |
 
 `index.js` 只是空的 Host 半边（bundle 行需要它）；全部能力在 `client.js`。
@@ -61,7 +68,7 @@ current page URL from the composer, one-click copy.
 
 ```bash
 npm run checks   # node --check index.js && node --check client.js
-npm test         # 无 DSH 环境下的冒烟测试：shim 掉 React/window，验证标签页类型、两个 slot、@ 源与 onPick
+npm test         # 无 DSH 环境下的冒烟测试：shim 掉 React/window，验证标签页类型、两个 slot、@ 源与 onPick、/url 指令与插入路径
 ```
 
 - 无构建步骤、无第三方依赖：纯 ESM（Host 半边）+ 浏览器 classic script（`client.js`）。

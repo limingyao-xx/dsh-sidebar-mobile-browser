@@ -63,6 +63,11 @@ window.__ModuleLoader__.load({
       'error.clipboard': '复制失败，请手动选择地址栏内容。',
       'mention.current': '当前页面地址',
       'mention.other': '预览页：{host}',
+      'action.mention': '插入到对话框',
+      'action.mentioned': '已插入',
+      'command.url': '引用当前预览页地址',
+      'command.urlHint': '把预览页 URL 写进输入框',
+      'error.insert': '插入失败：该会话的输入框尚未就绪。',
     };
 
     const en = {
@@ -83,6 +88,11 @@ window.__ModuleLoader__.load({
       'error.clipboard': 'Copy failed; select the address bar text instead.',
       'mention.current': 'Current page URL',
       'mention.other': 'Preview: {host}',
+      'action.mention': 'Insert into chat',
+      'action.mentioned': 'Inserted',
+      'command.url': 'Insert the preview page URL',
+      'command.urlHint': 'Write the preview page URL into the composer',
+      'error.insert': 'Insertion failed: this session has no composer yet.',
     };
 
     /** Stylesheet: inherits the surrounding ink with color-mix, no fixed palette. */
@@ -186,6 +196,54 @@ window.__ModuleLoader__.load({
       lastTabBySession.set(sessionId, tabId);
     }
 
+    /** The URL one Session is previewing right now: the tab touched last, else the freshest live one. */
+    function pageUrlFor(sessionId) {
+      if (typeof sessionId !== 'string' || sessionId === '') return '';
+      const now = Date.now();
+      const newest = lastTabBySession.get(sessionId);
+      const current = newest === undefined ? undefined : pages.get(newest);
+      if (current !== undefined && current.sessionId === sessionId && now - current.at <= PAGE_TTL_MS) {
+        return current.url;
+      }
+      let found = '';
+      let at = -1;
+      for (const page of pages.values()) {
+        if (page.sessionId !== sessionId || now - page.at > PAGE_TTL_MS) continue;
+        if (page.at > at) {
+          at = page.at;
+          found = page.url;
+        }
+      }
+      return found;
+    }
+
+    /**
+     * Write text into one Session's composer through the public action face.
+     * The composer's own span is captured right before the edit, so the text
+     * lands at the caret and keeps whatever the user already typed.
+     * @param ctx - this bundle's context (needs the sessions service).
+     * @param sessionId - Session whose composer receives the text.
+     * @param text - literal text to insert.
+     * @returns whether the composer applied the edit.
+     */
+    function insertIntoComposer(ctx, sessionId, text) {
+      if (typeof text !== 'string' || text === '' || typeof sessionId !== 'string' || sessionId === '') return false;
+      try {
+        const sessions = ctx.get('sessions');
+        const actx = sessions === undefined ? undefined : sessions.scope(sessionId);
+        const conversation = actx === undefined ? undefined : actx.get('conversation');
+        const input = conversation === undefined || conversation === null ? undefined : conversation.input;
+        if (input === undefined || typeof input.shell !== 'function') return false;
+        const shell = input.shell(sessionId);
+        const actions = shell === undefined || shell === null ? undefined : shell.actions;
+        if (actions === undefined || typeof actions.captureInsertion !== 'function' || typeof actions.insertText !== 'function') return false;
+        return actions.insertText(text, actions.captureInsertion()) === true;
+      } catch (error) {
+        console.warn('[mobile-browser] could not insert the page URL into the composer:', error);
+        return false;
+      }
+    }
+
     /** A phone outline for the tab title, the guide card, and mention rows. */
     function PhoneGlyph({ size }) {
       const side = size === undefined ? 14 : size;
@@ -199,7 +257,7 @@ window.__ModuleLoader__.load({
     }
 
     return {
-      inject: ['slots', 'locale', 'sidebarRight', 'sidebarRightTabs', 'inputTriggers'],
+      inject: ['slots', 'locale', 'sessions', 'commandUi', 'sidebarRight', 'sidebarRightTabs', 'inputTriggers'],
       apply(ctx) {
         const t = ctx.locale.bind(NS);
 
@@ -254,6 +312,7 @@ window.__ModuleLoader__.load({
           const [url, setUrl] = React.useState(initial);
           const [revision, setRevision] = React.useState(0);
           const [copied, setCopied] = React.useState(false);
+          const [inserted, setInserted] = React.useState(false);
           const [error, setError] = React.useState('');
           const [scale, setScale] = React.useState(1);
           const stageRef = React.useRef(null);
@@ -288,6 +347,12 @@ window.__ModuleLoader__.load({
             const timer = window.setTimeout(() => setCopied(false), 1400);
             return () => window.clearTimeout(timer);
           }, [copied]);
+
+          React.useEffect(() => {
+            if (!inserted) return undefined;
+            const timer = window.setTimeout(() => setInserted(false), 1400);
+            return () => window.clearTimeout(timer);
+          }, [inserted]);
 
           const open = () => {
             const result = normalizeUrl(draft);
@@ -325,6 +390,17 @@ window.__ModuleLoader__.load({
               void failure;
               failed();
             }
+          };
+
+          /** Put the page URL into this Session's composer, at its caret. */
+          const insertUrl = () => {
+            if (url === '') return;
+            if (insertIntoComposer(ctx, sessionId, url)) {
+              setError('');
+              setInserted(true);
+              return;
+            }
+            setError(copy('error.insert'));
           };
 
           const pickPreset = (id) => {
@@ -408,6 +484,13 @@ window.__ModuleLoader__.load({
                   },
                   h('rect', { x: 5.2, y: 5.2, width: 8.1, height: 8.1, rx: 1.6 }),
                   h('path', { d: 'M10.8 5.2V3.7c0-.7-.6-1.3-1.3-1.3H3.7c-.7 0-1.3.6-1.3 1.3v5.8c0 .7.6 1.3 1.3 1.3h1.5' }))),
+              h('button', {
+                type: 'button',
+                className: 'dmb-btn dmb-btn-icon',
+                title: inserted ? copy('action.mentioned') : copy('action.mention'),
+                disabled: url === '',
+                onClick: insertUrl,
+              }, '@'),
             ),
             h(
               'div',
@@ -546,6 +629,22 @@ window.__ModuleLoader__.load({
         };
 
         ctx.effect(() => ctx.inputTriggers.registerSource(source), 'mobile-browser: @ source');
+
+        /** `/url`: the same URL, one keystroke away — no menu, no mouse. */
+        ctx.effect(() => ctx.commandUi.register({
+          name: 'url',
+          label: () => t('command.url'),
+          description: () => t('command.urlHint'),
+          available: (session) => pageUrlFor(session === undefined || session === null ? undefined : session.sessionId) !== '',
+          ui: {
+            kind: 'action',
+            run: (session) => {
+              const url = pageUrlFor(session === undefined || session === null ? undefined : session.sessionId);
+              if (url === '') return;
+              insertIntoComposer(ctx, session.sessionId, url);
+            },
+          },
+        }), 'mobile-browser: /url');
       },
     };
   },
