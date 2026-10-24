@@ -55,8 +55,6 @@ window.__ModuleLoader__.load({
       'guide.description': '按手机 / 平板尺寸打开网页',
       'address.placeholder': '输入网址，回车打开',
       'action.reload': '重新加载',
-      'action.back': '后退',
-      'action.forward': '前进',
       'frame.pending': '正在创建预览页…',
       'error.frame': '页面加载失败（{code}）',
       'action.copy': '复制 URL',
@@ -95,8 +93,6 @@ window.__ModuleLoader__.load({
       'guide.description': 'Open a page at a phone or tablet size',
       'address.placeholder': 'Enter a URL and press Enter',
       'action.reload': 'Reload',
-      'action.back': 'Back',
-      'action.forward': 'Forward',
       'frame.pending': 'Starting the preview…',
       'error.frame': 'Could not load the page ({code})',
       'action.copy': 'Copy URL',
@@ -658,21 +654,6 @@ window.__ModuleLoader__.load({
             setRevision((value) => value + 1);
           };
 
-          /** Walk the guest's own history; an iframe offers no such handle. */
-          const goBack = (step) => {
-            const element = frameRef.current;
-            if (element === null) return;
-            try {
-              if (step < 0) {
-                if (typeof element.canGoBack !== 'function' || element.canGoBack()) element.goBack();
-                return;
-              }
-              if (typeof element.canGoForward !== 'function' || element.canGoForward()) element.goForward();
-            } catch (failure) {
-              void failure;
-            }
-          };
-
           React.useEffect(() => { writeSize(size); }, [size]);
 
           React.useEffect(() => {
@@ -961,20 +942,6 @@ window.__ModuleLoader__.load({
                   }
                 },
               }),
-              guest.phase === 'ready' ? h('button', {
-                type: 'button',
-                className: 'dmb-btn dmb-btn-icon',
-                title: copy('action.back'),
-                'aria-label': copy('action.back'),
-                onClick: () => goBack(-1),
-              }, '‹') : null,
-              guest.phase === 'ready' ? h('button', {
-                type: 'button',
-                className: 'dmb-btn dmb-btn-icon',
-                title: copy('action.forward'),
-                'aria-label': copy('action.forward'),
-                onClick: () => goBack(1),
-              }, '›') : null,
               h('button', {
                 type: 'button',
                 className: 'dmb-btn',

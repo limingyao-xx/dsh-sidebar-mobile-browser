@@ -419,9 +419,9 @@ if (addressNode.props.value !== 'https://other.test/deep/link') {
 }
 console.log('guest webview: in-page navigation is mirrored into the address bar');
 
-if (findButtonByTitle(bridged, 'action.back') === undefined) throw new Error('a webview tab offers history buttons');
-if (findButtonByTitle(bridged, 'action.forward') === undefined) throw new Error('a webview tab offers forward navigation');
-console.log('guest webview: history buttons');
+if (findButtonByTitle(bridged, 'action.back') !== undefined) throw new Error('the toolbar must not offer history buttons');
+if (findButtonByTitle(bridged, 'action.forward') !== undefined) throw new Error('the toolbar must not offer forward navigation');
+console.log('guest webview: no history buttons');
 delete globalThis.window.dshDesktop;
 
 console.log('SMOKE_OK');
