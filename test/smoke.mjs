@@ -319,4 +319,38 @@ if (findButtonByTitle(noHome, 'action.home.go').props.disabled !== true) {
 }
 console.log('house button: disabled when no default page is set');
 
+// Inside the desktop shell the page rides a guest webview: the main process owns
+// the partition, the lease names the element, and only then can the address bar
+// follow navigations. The lease arrives on a later tick, so the first paint is a
+// placeholder rather than an iframe that would load the page twice.
+globalThis.window.dshDesktop = {
+  protocolVersion: 1,
+  browser: {
+    acquire: async () => ({ lease: 'lease-test', partition: 'dsh-sidebar-browser-test' }),
+    release: async () => {},
+  },
+};
+hookStore.length = 0;
+hookCursor = 0;
+const pendingView = body(driftProps);
+if (iframeOf(pendingView) !== undefined) throw new Error('a bridged tab must not paint an iframe');
+console.log('guest pending: placeholder while the lease is approved');
+
+await Promise.resolve();
+await Promise.resolve();
+hookCursor = 0;
+const bridged = body(driftProps);
+let guestNode;
+walk(bridged, (node) => {
+  if (guestNode === undefined && node.type === 'webview') guestNode = node;
+});
+if (guestNode === undefined) throw new Error('expected a webview once the lease arrives');
+console.log('guest webview:', guestNode.props.partition, guestNode.props.name);
+if (guestNode.props.partition !== 'dsh-sidebar-browser-test') throw new Error('the webview must carry the approved partition');
+if (guestNode.props.name !== 'lease-test') throw new Error('the webview must carry the lease as its name');
+if (findButtonByTitle(bridged, 'action.back') === undefined) throw new Error('a webview tab offers history buttons');
+if (findButtonByTitle(bridged, 'action.forward') === undefined) throw new Error('a webview tab offers forward navigation');
+console.log('guest webview: history buttons and approved partition');
+delete globalThis.window.dshDesktop;
+
 console.log('SMOKE_OK');

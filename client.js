@@ -20,6 +20,8 @@ window.__ModuleLoader__.load({
     const PAGE_TTL_MS = 12 * 60 * 60 * 1000;
     /** Rows the `@` menu offers at most. */
     const PAGE_LIMIT = 5;
+    /** Storage identity the desktop shell keys our guest partition by. */
+    const GUEST_WORKSPACE = 'dsh-mobile-browser-preview';
 
     /** Common device sizes, plus the custom escape hatch. */
     const PRESETS = [
@@ -53,6 +55,9 @@ window.__ModuleLoader__.load({
       'guide.description': '按手机 / 平板尺寸打开网页',
       'address.placeholder': '输入网址，回车打开',
       'action.reload': '重新加载',
+      'action.back': '后退',
+      'action.forward': '前进',
+      'frame.pending': '正在创建预览页…',
       'action.copy': '复制 URL',
       'action.copied': '已复制',
       'action.rotate': '横竖屏切换',
@@ -89,6 +94,9 @@ window.__ModuleLoader__.load({
       'guide.description': 'Open a page at a phone or tablet size',
       'address.placeholder': 'Enter a URL and press Enter',
       'action.reload': 'Reload',
+      'action.back': 'Back',
+      'action.forward': 'Forward',
+      'frame.pending': 'Starting the preview…',
       'action.copy': 'Copy URL',
       'action.copied': 'Copied',
       'action.rotate': 'Rotate',
@@ -138,6 +146,8 @@ window.__ModuleLoader__.load({
 .dmb-stage{position:relative;flex:1 1 auto;min-height:0;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:12px;background:color-mix(in srgb,currentColor 3%,transparent)}
 .dmb-device{position:relative;border-radius:16px;overflow:hidden;background:#fff;box-shadow:0 6px 24px color-mix(in srgb,currentColor 22%,transparent),0 0 0 1px color-mix(in srgb,currentColor 18%,transparent);flex:0 0 auto}
 .dmb-frame{position:absolute;top:0;left:0;border:0;background:#fff;transform-origin:top left}
+.dmb-frame{display:block}
+.dmb-pending{inset:0;display:flex;align-items:center;justify-content:center;color:var(--dsw-alias-label-secondary);font-size:12px}
 .dmb-empty{max-width:280px;text-align:center;opacity:.72;line-height:1.6}
 .dmb-empty-title{font-weight:600;margin-bottom:4px}
 .dmb-empty-actions{margin-top:10px;display:flex;flex-direction:column;align-items:center;gap:6px}
@@ -248,9 +258,32 @@ window.__ModuleLoader__.load({
       return String(raw === undefined || raw === null ? '' : raw).replace(/^https?:\/\//i, '').split('/')[0];
     }
 
+    /**
+     * The desktop shell's guest bridge. Present only when this page runs inside the
+     * Electron app; the Web GUI has no such bridge and stays on `<iframe>`.
+     */
+    function desktopBridge() {
+      const desktop = typeof window === 'undefined' ? undefined : window.dshDesktop;
+      if (desktop === undefined || desktop === null) return undefined;
+      const bridge = desktop.browser;
+      if (bridge === undefined || bridge === null) return undefined;
+      if (typeof bridge.acquire !== 'function' || typeof bridge.release !== 'function') return undefined;
+      return bridge;
+    }
+
+    /** Half of pretending to be a phone is telling servers so. */
+    function userAgentFor(size) {
+      if (size.width >= 1024) {
+        return 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+      }
+      if (size.width >= 700) {
+        return 'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
+      }
+      return 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
+    }
+
     /** The registered preset matching one size, or `custom`. */
-    function presetFor(width, height) {
-      const match = PRESETS.find((preset) => preset.width === width && preset.height === height);
+    function presetFor(width, height) {      const match = PRESETS.find((preset) => preset.width === width && preset.height === height);
       return match === undefined ? 'custom' : match.id;
     }
 
@@ -437,6 +470,104 @@ window.__ModuleLoader__.load({
           const [sizeOpen, setSizeOpen] = React.useState(false);
           const [scale, setScale] = React.useState(1);
           const stageRef = React.useRef(null);
+          /** The webview element when the desktop shell hosts the page, else null. */
+          const frameRef = React.useRef(null);
+          const bridge = desktopBridge();
+          /**
+           * `off` — no bridge, so an `<iframe>` carries the page (Web GUI).
+           * `pending` — waiting for the main process to approve a guest.
+           * `ready` — the webview exists and reports its own navigations.
+           */
+          const [guest, setGuest] = React.useState(() => (bridge === undefined ? { phase: 'off' } : { phase: 'pending' }));
+
+          React.useEffect(() => {
+            if (bridge === undefined || guest.phase !== 'pending') return undefined;
+            let live = true;
+            bridge.acquire(GUEST_WORKSPACE).then((reservation) => {
+              if (reservation === undefined || reservation === null) throw new Error('desktop browser: empty reservation');
+              if (!live) {
+                void bridge.release(reservation.lease);
+                return;
+              }
+              setGuest({
+                phase: 'ready',
+                lease: String(reservation.lease),
+                partition: String(reservation.partition),
+              });
+            }).catch(() => {
+              if (live) setGuest({ phase: 'off' });
+            });
+            return () => {
+              live = false;
+            };
+          }, [guest.phase]);
+
+          React.useEffect(() => () => {
+            if (bridge !== undefined && guest.phase === 'ready') void bridge.release(guest.lease);
+          }, [guest.phase]);
+
+          /**
+           * Keep the address bar honest: the webview reports every main-frame
+           * navigation, which an `<iframe>` can never do across origins.
+           */
+          React.useEffect(() => {
+            const element = frameRef.current;
+            if (guest.phase !== 'ready' || element === null) return undefined;
+            const sync = () => {
+              const next = typeof element.getURL === 'function' ? element.getURL() : '';
+              if (next === '' || next === url) return;
+              setUrl(next);
+              setDraft(next);
+            };
+            const inPage = (event) => {
+              if (event === undefined || event.isMainFrame !== false) sync();
+            };
+            /** Phone, tablet and desktop start over in a new identity class. */
+            const uaClass = size.width >= 1024 ? '2' : size.width >= 700 ? '1' : '0';
+            const adopt = () => {
+              if (element.dataset.uaClass === uaClass) return;
+              element.dataset.uaClass = uaClass;
+              try {
+                element.setUserAgent(userAgentFor(size));
+                element.reload();
+              } catch (failure) {
+                void failure;
+              }
+            };
+            element.addEventListener('did-navigate', sync);
+            element.addEventListener('did-navigate-in-page', inPage);
+            element.addEventListener('dom-ready', adopt);
+            return () => {
+              element.removeEventListener('did-navigate', sync);
+              element.removeEventListener('did-navigate-in-page', inPage);
+              element.removeEventListener('dom-ready', adopt);
+            };
+          }, [guest.phase, size.width, size.height]);
+
+          /** Reload through whichever carrier is live. */
+          const reloadPage = () => {
+            const element = frameRef.current;
+            if (guest.phase === 'ready' && element !== null && typeof element.reload === 'function') {
+              element.reload();
+              return;
+            }
+            setRevision((value) => value + 1);
+          };
+
+          /** Walk the guest's own history; an iframe offers no such handle. */
+          const goBack = (step) => {
+            const element = frameRef.current;
+            if (element === null) return;
+            try {
+              if (step < 0) {
+                if (typeof element.canGoBack !== 'function' || element.canGoBack()) element.goBack();
+                return;
+              }
+              if (typeof element.canGoForward !== 'function' || element.canGoForward()) element.goForward();
+            } catch (failure) {
+              void failure;
+            }
+          };
 
           React.useEffect(() => { writeSize(size); }, [size]);
 
@@ -520,6 +651,10 @@ window.__ModuleLoader__.load({
           const show = (target) => {
             setError('');
             setDraft(target);
+            if (guest.phase === 'ready' && target === url) {
+              reloadPage();
+              return;
+            }
             setUrl(target);
             setRevision((value) => value + 1);
           };
@@ -537,8 +672,39 @@ window.__ModuleLoader__.load({
            * from their iframe (their pixels are opaque), so the honest capture
            * path is to screen-capture the tab and crop the frame out of it.
            */
+          /** Hand one captured image to the clipboard, or download it as a stand-in. */
+          const deliverShot = async (blob) => {
+            const clipboard = navigator.clipboard;
+            if (clipboard !== undefined && typeof clipboard.write === 'function' && typeof window.ClipboardItem === 'function') {
+              try {
+                await clipboard.write([new window.ClipboardItem({ 'image/png': blob })]);
+                setError('');
+                setShot('copied');
+                return;
+              } catch (failure) {
+                void failure;
+              }
+            }
+            downloadBlob(blob, `mobile-preview-${hostOf(url)}-${Date.now()}.png`);
+            setError('');
+            setShot('saved');
+          };
+
           const shootPage = async () => {
             if (url === '') return;
+            const element = frameRef.current;
+            if (guest.phase === 'ready' && element !== null && typeof element.capturePage === 'function') {
+              try {
+                const image = await element.capturePage();
+                const bytes = image === null || image === undefined || typeof image.toPNG !== 'function' ? undefined : image.toPNG();
+                if (bytes !== undefined && bytes !== null && bytes.length > 0) {
+                  await deliverShot(new Blob([bytes], { type: 'image/png' }));
+                  return;
+                }
+              } catch (failure) {
+                void failure;
+              }
+            }
             const stage = stageRef.current;
             const media = typeof navigator === 'undefined' ? undefined : navigator.mediaDevices;
             if (stage === null || media === undefined || typeof media.getDisplayMedia !== 'function') {
@@ -586,20 +752,7 @@ window.__ModuleLoader__.load({
                 setError(copy('error.captureBlank'));
                 return;
               }
-              const clipboard = navigator.clipboard;
-              if (clipboard !== undefined && typeof clipboard.write === 'function' && typeof window.ClipboardItem === 'function') {
-                try {
-                  await clipboard.write([new window.ClipboardItem({ 'image/png': blob })]);
-                  setError('');
-                  setShot('copied');
-                  return;
-                } catch (failure) {
-                  void failure;
-                }
-              }
-              downloadBlob(blob, `mobile-preview-${hostOf(url)}-${Date.now()}.png`);
-              setError('');
-              setShot('saved');
+              await deliverShot(blob);
             } catch (failure) {
               void failure;
               setError(copy('error.captureBlank'));
@@ -654,6 +807,39 @@ window.__ModuleLoader__.load({
 
           const currentPreset = size.preset === undefined ? 'custom' : size.preset;
           const isHome = home !== '' && home === url;
+          const frameStyle = { width: `${size.width}px`, height: `${size.height}px`, transform: `scale(${scale})` };
+
+          /**
+           * The page carrier: the desktop guest webview when the shell approved one,
+           * an `<iframe>` otherwise (the Web GUI has no guest bridge).
+           */
+          const carrier = (target) => {
+            if (guest.phase === 'ready') {
+              return h('webview', {
+                className: 'dmb-frame',
+                ref: frameRef,
+                key: guest.lease,
+                name: guest.lease,
+                partition: guest.partition,
+                allowpopups: '',
+                src: target,
+                style: frameStyle,
+              });
+            }
+            if (guest.phase === 'pending') {
+              return h('div', { className: 'dmb-frame dmb-pending' }, copy('frame.pending'));
+            }
+            return h('iframe', {
+              className: 'dmb-frame',
+              ref: frameRef,
+              key: `${target}#${revision}`,
+              src: target,
+              title: hostOf(target),
+              referrerPolicy: 'no-referrer-when-downgrade',
+              allow: 'clipboard-write; fullscreen',
+              style: frameStyle,
+            });
+          };
 
           return h(
             'div',
@@ -675,12 +861,26 @@ window.__ModuleLoader__.load({
                   }
                 },
               }),
+              guest.phase === 'ready' ? h('button', {
+                type: 'button',
+                className: 'dmb-btn dmb-btn-icon',
+                title: copy('action.back'),
+                'aria-label': copy('action.back'),
+                onClick: () => goBack(-1),
+              }, '‹') : null,
+              guest.phase === 'ready' ? h('button', {
+                type: 'button',
+                className: 'dmb-btn dmb-btn-icon',
+                title: copy('action.forward'),
+                'aria-label': copy('action.forward'),
+                onClick: () => goBack(1),
+              }, '›') : null,
               h('button', {
                 type: 'button',
                 className: 'dmb-btn',
                 title: copy('action.reload'),
                 disabled: url === '',
-                onClick: () => setRevision((value) => value + 1),
+                onClick: reloadPage,
               }, '⟳'),
               h('button', {
                 type: 'button',
@@ -811,15 +1011,7 @@ window.__ModuleLoader__.load({
                 : h('div', {
                     className: 'dmb-device',
                     style: { width: `${Math.round(size.width * scale)}px`, height: `${Math.round(size.height * scale)}px` },
-                  }, h('iframe', {
-                    className: 'dmb-frame',
-                    key: `${url}#${revision}`,
-                    src: url,
-                    title: hostOf(url),
-                    referrerPolicy: 'no-referrer-when-downgrade',
-                    allow: 'clipboard-write; fullscreen',
-                    style: { width: `${size.width}px`, height: `${size.height}px`, transform: `scale(${scale})` },
-                  })),
+                  }, carrier(url)),
             ),
             error === '' ? null : h('div', { className: 'dmb-error' }, error),
           );

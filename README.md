@@ -9,7 +9,9 @@ insertion of the current page URL from the composer, one-click copy.
 - 标签页类型：**移动端预览**（与内置 Browser 并列，不替换它）
 - 设备尺寸：9 个常见预设 + 自定义宽高（180–2560），最近一次尺寸会记住
 - 尺寸栏**默认收起**，点工具栏最右的滑块图标展开 / 收起，地址栏与预览区因此始终占满高度
-- 页面超出可用高度时**等比缩放**，不改 iframe 视口宽高（看到的视口就是选定的设备宽度）
+- 页面超出可用高度时**等比缩放**，不改网页视口宽高（看到的视口就是选定的设备宽度）
+- **桌面端用 Electron guest webview 承载**：地址栏随站内跳转实时更新、支持后退 / 前进、按设备档位模拟 UA、
+  截图直接 `capturePage()`；Web GUI 自动退回 iframe（其余功能不变）
 - `@` 候选：本会话预览过的页面，最近一个标「当前页面地址」，选中即插入纯文本 URL
 - `/url` 快捷指令：选中即把当前页面地址写进输入框（不用开 `@` 菜单、不用鼠标）
 - 工具栏 `@` 按钮：同一件事的一键版，插到光标处，原有草稿不动
@@ -36,11 +38,13 @@ insertion of the current page URL from the composer, one-click copy.
    再点一次收起。默认收起，所以每次新开标签页都从「只有地址栏」的紧凑状态开始。
 4. 工具栏：`⟳` 重载、复制图标复制当前 URL、`@` 把当前 URL 插入对话框、相机图标截图、
    房屋图标回到默认主页、`⭐` 设为默认主页、滑块图标切换尺寸栏；尺寸栏展开时右侧还有 `⟲` 横竖屏互换。
+   桌面端（页面跑在 guest webview 上）额外有 `‹` `›` 后退 / 前进，且**地址栏随页面跳转实时更新**。
 5. 点 `⭐` 之后，新开的空白标签页会直接打开这个默认主页；空状态里也有「打开默认主页」按钮。
-   在页面里点来点去走远了，点**房屋图标**即可回到默认主页（地址栏是进入时的地址，不会跟着站内跳转变化）。
-   再点一次 `⭐` 取消默认主页。
-6. 点相机图标截图：浏览器会弹出捕获选择器，选 **「当前标签页」**，插件按设备框裁剪后复制到剪贴板
-   （剪贴板不支持图片时改为下载 `mobile-preview-<host>-<时间戳>.png`）。
+   走远了点**房屋图标**即回默认主页；再点一次 `⭐` 取消默认主页。
+   （Web GUI 里没有 webview 通道，地址栏只能停留在进入时的地址，这时房屋按钮就是唯一的“回去”入口。）
+6. 点相机图标截图：桌面端直接 `capturePage()` 截设备框（无需选择器、逐像素准确），
+   Web GUI 则弹出捕获选择器、选 **「当前标签页」** 后按设备框裁剪；结果先复制到剪贴板，
+   剪贴板不支持图片时改为下载 `mobile-preview-<host>-<时间戳>.png`。
 7. 每个会话记住最近 5 个预览页，用 `@` 可以回到其中任一页。
 8. 对话框输入 `@` → 选「当前页面地址」即可把 URL 作为纯文本插入；
    或输入 `/url` 回车 —— 当前页面地址直接写进输入框，草稿里已有的内容会保留。
@@ -64,17 +68,19 @@ insertion of the current page URL from the composer, one-click copy.
 - 需要 DSH `0.2.x`（在 `0.2.1-rc.2` 上验证），Web 与 Desktop 两种 profile 都可用。
 - 只用到公开扩展点：`ctx.sidebarRightTabs` / `ctx.slots` / `ctx.inputTriggers` / `ctx.commandUi` /
   `ctx.sessions` / `ctx.locale`，不 patch 任何内置模块。
+- **桌面端**另外用外壳暴露的 `window.dshDesktop.browser`（`acquire` / `release`，与内置 Browser 标签同一通道）
+  申请 guest webview；拿不到通道（Web GUI、或 acquire 被拒）时**自动退回 iframe**，功能不受影响、只是地址栏不跟随。
 - 插入文本走对话面板公开的 action face（`captureInsertion` + `insertText`），不依赖内部事件。
 
 ## 已知局限
 
-- 载体是 iframe：目标站点返回 `X-Frame-Options` 或 CSP `frame-ancestors` 时会白屏 —— 改用内置 Browser 标签打开同一地址。
-- 只改视口尺寸，**不伪造移动端 User-Agent**；依赖真机 UA 的站点预览会与手机不一致。
-- 桌面端嵌入的 webview 标签页不参与尺寸模拟（本插件只作用于自己注册的标签页类型）。
-- 跨域页面的地址栏不会跟随站内跳转（浏览器同源策略限制），此时用书签列表或重新输入地址。
-- 截图走**屏幕捕获**（`getDisplayMedia`）再按设备框裁剪：跨域 iframe 的像素无法被直接读取，
-  屏幕捕获是唯一能做到「所见即所截」的路子。因此每次截图都要在系统选择器里选**「当前标签页」**；
-  若环境拒绝屏幕捕获（例如未开放该能力的 Electron 桌面端），会提示改用系统截图（Win+Shift+S）。
+- **Web GUI 只能走 iframe**：地址栏停留在进入时的地址（同源策略读不到跳转），
+  且目标站点返回 `X-Frame-Options` / CSP `frame-ancestors` 时会白屏 —— 这种页面用内置 Browser 标签打开。
+- 桌面端的 guest 分区由主进程创建，按工作区分片（`dsh-sidebar-browser-*`），登录态与内置 Browser 标签**不共享**。
+- UA 按尺寸档位模拟（手机 / 平板 / 桌面三档，改档会重载一次）；不做逐机型的完整指纹模拟。
+- 桌面端嵌入的原生 Browser 标签页不参与尺寸模拟（本插件只作用于自己注册的标签页类型）。
+- Web GUI 的截图仍走**屏幕捕获**（`getDisplayMedia`）再按设备框裁剪，每次都要在系统选择器里选「当前标签页」；
+  环境拒绝该能力时会提示改用系统截图（Win+Shift+S）。
 - DSH 以 HTTPS 提供服务时，`http://` 页面会被浏览器按混合内容拦截。
 
 ## 工作原理
@@ -82,11 +88,12 @@ insertion of the current page URL from the composer, one-click copy.
 | 扩展点 | 用途 |
 | --- | --- |
 | `ctx.sidebarRightTabs.register()` | 注册标签页类型 `id = sidebar-mobile-browser`、`kind = mobile-browser` |
-| `ctx.slots.register({ name: 'sidebar.right.pane.tab', key })` | 渲染标签页主体（尺寸栏 + iframe + 工具栏） |
+| `ctx.slots.register({ name: 'sidebar.right.pane.tab', key })` | 渲染标签页主体（尺寸栏 + 页面载体 + 工具栏） |
 | `ctx.slots.register({ name: 'sidebar.right.pane.tab.title', key })` | 标签页标题跟随当前地址的 host |
 | `ctx.inputTriggers.registerSource({ trigger: '@', name: 'webpage' })` | 对话框 `@` 候选（按会话记录预览过的 URL） |
 | `ctx.commandUi.register({ name: 'url', ui: { kind: 'action' } })` | `/url` 快捷指令，把当前页面地址写进输入框 |
 | `ctx.sessions.scope(id)` → `conversation.input.shell(id).actions` | 插入文本用的公开 action face（先 `captureInsertion()` 取光标 span，再 `insertText()`） |
+| `window.dshDesktop.browser.acquire()` / `release()` | 桌面端申请 guest webview（与内置 Browser 同一通道），拿不到就用 iframe |
 | `ctx.locale.register()` | 中英文案内置 |
 
 `index.js` 只是空的 Host 半边（bundle 行需要它）；全部能力在 `client.js`。

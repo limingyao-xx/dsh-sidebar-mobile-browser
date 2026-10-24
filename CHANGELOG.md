@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.4.0 — 2026-10-24
+
+**变更**
+
+- 桌面端改用 Electron **guest webview** 承载页面（走外壳暴露的 `window.dshDesktop.browser.acquire/release`，
+  与内置 Browser 标签同一通道）：**地址栏随站内跳转实时更新**，工具栏多出 `‹` `›` 后退 / 前进，
+  并按尺寸档位模拟 UA（手机 / 平板 / 桌面，改档重载一次）。
+- 截图在桌面端改为 `capturePage()`：不再弹屏幕捕获选择器、不再按屏幕坐标裁剪，逐像素准确。
+- Web GUI（没有 guest 通道，或 acquire 被拒）**自动退回 iframe**：行为与 0.3.x 一致，
+  地址栏仍停留在进入时的地址，房屋按钮照旧可用。
+
+**测试**
+
+- `npm test` 新增断言：有桥时不画 iframe、先出占位再出 webview、webview 带主进程批准的
+  `partition` 与 lease `name`、webview 模式下出现后退 / 前进按钮。
+
 ## v0.3.1 — 2026-10-24
 
 **修复**
