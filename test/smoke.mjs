@@ -29,11 +29,26 @@ globalThis.window = {
 globalThis.document = documentShim;
 globalThis.ResizeObserver = class { observe() {} disconnect() {} };
 
-/** Minimal hooks shim: effects run immediately, state is read-only. */
+/**
+ * Minimal hooks shim: state survives a re-render. Setters only record the value —
+ * a real render loop would re-run effects that set state (the size row measures
+ * itself), so the test drives re-renders explicitly after a click instead.
+ */
+let hookCursor = 0;
+const hookStore = [];
+/** Assigned once the body component is resolved; the test calls it after a click. */
+let rerender = () => { throw new Error('rerender() ran before the body was resolved'); };
 const React = {
   createElement: (type, props, ...children) => ({ type, props: props ?? {}, children }),
   useMemo: (fn) => fn(),
-  useState: (initial) => [typeof initial === 'function' ? initial() : initial, () => {}],
+  useState: (initial) => {
+    const slot = hookCursor++;
+    if (!(slot in hookStore)) hookStore[slot] = typeof initial === 'function' ? initial() : initial;
+    const set = (next) => {
+      hookStore[slot] = typeof next === 'function' ? next(hookStore[slot]) : next;
+    };
+    return [hookStore[slot], set];
+  },
   useRef: () => ({ current: null }),
   useEffect: (fn) => { fn(); },
 };
@@ -109,11 +124,18 @@ const empty = await source_.candidates({ sessionId: 'sess-1' }, { query: '', sig
 console.log('candidates before any page:', JSON.stringify(empty));
 
 const body = registered.slots[0].component;
-const element = body({
+const bodyProps = {
   sessionId: 'sess-1',
   t: ctx.locale.bind(),
   useTabInfo: () => ({ tab: { id: 'tab-1', kind: 'mobile-browser', navigation: { params: { url: 'example.com/docs?x=1' } } } }),
-});
+};
+/** Hook index resets per pass, exactly like a real render. */
+let element = body(bodyProps);
+rerender = () => {
+  hookCursor = 0;
+  element = body(bodyProps);
+  return element;
+};
 console.log('body root class:', element && element.props && element.props.className);
 const rows = await source_.candidates({ sessionId: 'sess-1' }, { query: '', signal: undefined });
 console.log('candidates after render:', JSON.stringify(rows));
@@ -160,5 +182,35 @@ walk(element, (node) => {
 });
 console.log('toolbar buttons:', JSON.stringify(labels));
 if (!labels.includes('action.mention')) throw new Error('the address bar must offer the insert button');
+
+// The device row is collapsed by default: the toolbar toggle is the only way in,
+// so a plain render must not show the preset select at all.
+const countByClass = (root, className) => {
+  let count = 0;
+  walk(root, (node) => {
+    const value = node.props === undefined ? undefined : node.props.className;
+    if (typeof value === 'string' && value.split(/\s+/).includes(className)) count += 1;
+  });
+  return count;
+};
+const findSizeToggle = (root) => {
+  let found;
+  walk(root, (node) => {
+    const title = node.props === undefined ? undefined : node.props.title;
+    if (found === undefined && node.type === 'button' && typeof title === 'string' && title.startsWith('action.size')) found = node;
+  });
+  return found;
+};
+if (countByClass(element, 'dmb-select') !== 0) throw new Error('the size row must start collapsed');
+const sizeToggle = findSizeToggle(element);
+if (sizeToggle === undefined) throw new Error('expected a size toggle button in the toolbar');
+if (sizeToggle.props['aria-expanded'] !== false) throw new Error('the size toggle must report its row as collapsed');
+sizeToggle.props.onClick();
+rerender();
+if (countByClass(element, 'dmb-select') !== 1) throw new Error('the size toggle must reveal the size row');
+findSizeToggle(element).props.onClick();
+rerender();
+if (countByClass(element, 'dmb-select') !== 0) throw new Error('the size toggle must collapse the row again');
+console.log('size row: collapsed by default, opens and closes from the toolbar');
 
 console.log('SMOKE_OK');

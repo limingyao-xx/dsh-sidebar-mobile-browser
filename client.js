@@ -54,6 +54,7 @@ window.__ModuleLoader__.load({
       'action.copy': '复制 URL',
       'action.copied': '已复制',
       'action.rotate': '横竖屏切换',
+      'action.size': '尺寸设置',
       'device.label': '尺寸',
       'device.custom': '自定义',
       'empty.title': '输入网址后按回车',
@@ -79,6 +80,7 @@ window.__ModuleLoader__.load({
       'action.copy': 'Copy URL',
       'action.copied': 'Copied',
       'action.rotate': 'Rotate',
+      'action.size': 'Size settings',
       'device.label': 'Size',
       'device.custom': 'Custom',
       'empty.title': 'Enter a URL and press Enter',
@@ -105,6 +107,7 @@ window.__ModuleLoader__.load({
 .dmb-btn:hover:not(:disabled){background:color-mix(in srgb,currentColor 8%,transparent)}
 .dmb-btn:disabled{opacity:.42;cursor:default}
 .dmb-btn-icon{width:26px;padding:0;display:inline-flex;align-items:center;justify-content:center}
+.dmb-btn[aria-expanded="true"]{background:color-mix(in srgb,currentColor 12%,transparent);border-color:color-mix(in srgb,currentColor 38%,transparent)}
 .dmb-btn-icon svg{display:block}
 .dmb-select{height:26px;max-width:158px;padding:0 4px;border-radius:6px;border:1px solid color-mix(in srgb,currentColor 20%,transparent);background:transparent;color:inherit;font:inherit;cursor:pointer}
 .dmb-select option{color:#111}
@@ -314,6 +317,8 @@ window.__ModuleLoader__.load({
           const [copied, setCopied] = React.useState(false);
           const [inserted, setInserted] = React.useState(false);
           const [error, setError] = React.useState('');
+          /** The size row is collapsed by default; the toolbar toggle reveals it. */
+          const [sizeOpen, setSizeOpen] = React.useState(false);
           const [scale, setScale] = React.useState(1);
           const stageRef = React.useRef(null);
 
@@ -491,8 +496,23 @@ window.__ModuleLoader__.load({
                 disabled: url === '',
                 onClick: insertUrl,
               }, '@'),
+              h('button', {
+                type: 'button',
+                className: 'dmb-btn dmb-btn-icon',
+                title: `${copy('action.size')} · ${size.width}×${size.height}`,
+                'aria-label': copy('action.size'),
+                'aria-expanded': sizeOpen,
+                onClick: () => setSizeOpen((value) => !value),
+              }, h('svg', {
+                width: 14, height: 14, viewBox: '0 0 16 16', fill: 'none',
+                stroke: 'currentColor', strokeWidth: 1.3, strokeLinecap: 'round',
+                'aria-hidden': true,
+              },
+              h('path', { d: 'M2.6 5.4h10.8M2.6 10.6h10.8' }),
+              h('circle', { cx: 6.1, cy: 5.4, r: 1.7, fill: 'currentColor', stroke: 'none' }),
+              h('circle', { cx: 10.3, cy: 10.6, r: 1.7, fill: 'currentColor', stroke: 'none' }))),
             ),
-            h(
+            sizeOpen ? h(
               'div',
               { className: 'dmb-bar' },
               h('select', {
@@ -537,7 +557,7 @@ window.__ModuleLoader__.load({
                 },
               }),
               h('button', { type: 'button', className: 'dmb-btn', title: copy('action.rotate'), onClick: rotate }, '⟲'),
-            ),
+            ) : null,
             h(
               'div',
               { className: 'dmb-stage', ref: stageRef },
