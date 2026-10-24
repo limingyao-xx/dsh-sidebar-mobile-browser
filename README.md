@@ -77,6 +77,7 @@ insertion of the current page URL from the composer, one-click copy.
 - **Web GUI 只能走 iframe**：地址栏停留在进入时的地址（同源策略读不到跳转），
   且目标站点返回 `X-Frame-Options` / CSP `frame-ancestors` 时会白屏 —— 这种页面用内置 Browser 标签打开。
 - 桌面端的 guest 分区由主进程创建，按工作区分片（`dsh-sidebar-browser-*`），登录态与内置 Browser 标签**不共享**。
+- guest 若 5 秒内没挂上 / 没开始导航，会自动退回 iframe（面板不会一直空着）；加载失败会显示错误码。
 - UA 按尺寸档位模拟（手机 / 平板 / 桌面三档，改档会重载一次）；不做逐机型的完整指纹模拟。
 - 桌面端嵌入的原生 Browser 标签页不参与尺寸模拟（本插件只作用于自己注册的标签页类型）。
 - Web GUI 的截图仍走**屏幕捕获**（`getDisplayMedia`）再按设备框裁剪，每次都要在系统选择器里选「当前标签页」；

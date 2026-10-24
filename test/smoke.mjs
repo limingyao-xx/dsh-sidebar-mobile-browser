@@ -348,6 +348,9 @@ if (guestNode === undefined) throw new Error('expected a webview once the lease 
 console.log('guest webview:', guestNode.props.partition, guestNode.props.name);
 if (guestNode.props.partition !== 'dsh-sidebar-browser-test') throw new Error('the webview must carry the approved partition');
 if (guestNode.props.name !== 'lease-test') throw new Error('the webview must carry the lease as its name');
+// The element is created on about:blank and navigated by loadURL once it attaches:
+// setting src at creation is what left the pane empty.
+if (guestNode.props.src !== 'about:blank#lease-test') throw new Error('the webview must start on about:blank');
 if (findButtonByTitle(bridged, 'action.back') === undefined) throw new Error('a webview tab offers history buttons');
 if (findButtonByTitle(bridged, 'action.forward') === undefined) throw new Error('a webview tab offers forward navigation');
 console.log('guest webview: history buttons and approved partition');

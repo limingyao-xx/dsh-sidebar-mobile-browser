@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.4.1 — 2026-10-24
+
+**修复**
+
+- 桌面端预览页一片空白：webview 元素建出来时 `src` 就是目标地址，而 Electron 在 guest 挂上之前不接受
+  外部导航，于是停在空白页。改为与内置 Browser 相同的手法 —— 元素建在 `about:blank#<lease>`，
+  等 `dom-ready` 再用 `loadURL()` 导航（之后地址栏变化也走 `loadURL`）。
+- 加载失败不再静默：`did-fail-load` 会在工具栏下方显示错误码（`error.frame`）。
+- 兜底：guest 5 秒内既没挂上也没开始导航，自动退回 iframe 承载，避免空面板。
+
+**测试**
+
+- `npm test` 新增断言：webview 以 `about:blank#<lease>` 起手（而不是直接挂目标地址）。
+
 ## v0.4.0 — 2026-10-24
 
 **变更**

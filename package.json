@@ -1,6 +1,6 @@
 {
   "name": "dsh-sidebar-mobile-browser",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Mobile-device preview browser for the DSH right sidebar: pick a phone or tablet size, @-mention or /url-insert the page URL from the composer, copy the URL in one click.",
   "type": "module",
   "license": "MIT",

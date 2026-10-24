@@ -58,6 +58,7 @@ window.__ModuleLoader__.load({
       'action.back': '后退',
       'action.forward': '前进',
       'frame.pending': '正在创建预览页…',
+      'error.frame': '页面加载失败（{code}）',
       'action.copy': '复制 URL',
       'action.copied': '已复制',
       'action.rotate': '横竖屏切换',
@@ -97,6 +98,7 @@ window.__ModuleLoader__.load({
       'action.back': 'Back',
       'action.forward': 'Forward',
       'frame.pending': 'Starting the preview…',
+      'error.frame': 'Could not load the page ({code})',
       'action.copy': 'Copy URL',
       'action.copied': 'Copied',
       'action.rotate': 'Rotate',
@@ -506,6 +508,21 @@ window.__ModuleLoader__.load({
             if (bridge !== undefined && guest.phase === 'ready') void bridge.release(guest.lease);
           }, [guest.phase]);
 
+          /** Ask the guest to show one page; the element ships with `about:blank`. */
+          const navigate = (target) => {
+            const element = frameRef.current;
+            if (element === null || guest.phase !== 'ready') return;
+            if (element.dataset.ready !== '1' || target === '') return;
+            const current = typeof element.getURL === 'function' ? element.getURL() : '';
+            if (current === target) return;
+            if (typeof element.loadURL !== 'function') return;
+            try {
+              void element.loadURL(target).catch(() => {});
+            } catch (failure) {
+              void failure;
+            }
+          };
+
           /**
            * Keep the address bar honest: the webview reports every main-frame
            * navigation, which an `<iframe>` can never do across origins.
@@ -525,24 +542,60 @@ window.__ModuleLoader__.load({
             /** Phone, tablet and desktop start over in a new identity class. */
             const uaClass = size.width >= 1024 ? '2' : size.width >= 700 ? '1' : '0';
             const adopt = () => {
-              if (element.dataset.uaClass === uaClass) return;
-              element.dataset.uaClass = uaClass;
-              try {
-                element.setUserAgent(userAgentFor(size));
-                element.reload();
-              } catch (failure) {
-                void failure;
+              element.dataset.ready = '1';
+              if (element.dataset.uaClass !== uaClass) {
+                element.dataset.uaClass = uaClass;
+                try {
+                  element.setUserAgent(userAgentFor(size));
+                } catch (failure) {
+                  void failure;
+                }
               }
+              navigate(url);
+            };
+            const started = (event) => {
+              if (event === undefined || event.isMainFrame !== false) element.dataset.nav = '1';
+            };
+            const failed = (event) => {
+              if (event !== undefined && event.isMainFrame === false) return;
+              const code = event !== undefined && typeof event.errorCode === 'number' ? String(event.errorCode) : '';
+              setError(copy('error.frame', { code }));
             };
             element.addEventListener('did-navigate', sync);
             element.addEventListener('did-navigate-in-page', inPage);
+            element.addEventListener('did-start-navigation', started);
+            element.addEventListener('did-fail-load', failed);
             element.addEventListener('dom-ready', adopt);
             return () => {
               element.removeEventListener('did-navigate', sync);
               element.removeEventListener('did-navigate-in-page', inPage);
+              element.removeEventListener('did-start-navigation', started);
+              element.removeEventListener('did-fail-load', failed);
               element.removeEventListener('dom-ready', adopt);
             };
           }, [guest.phase, size.width, size.height]);
+
+          /** Follow the address bar: a new URL loads once the guest is attached. */
+          React.useEffect(() => {
+            navigate(url);
+          }, [url, guest.phase]);
+
+          /**
+           * A guest that never attaches or never starts loading would leave an empty
+           * pane. Give it five seconds, then hand the page back to the iframe carrier.
+           */
+          React.useEffect(() => {
+            if (guest.phase !== 'ready' || url === '') return undefined;
+            const timer = window.setTimeout(() => {
+              const element = frameRef.current;
+              const attached = element !== null && element.dataset.ready === '1';
+              const navigated = element !== null && element.dataset.nav === '1';
+              if (attached && navigated) return;
+              if (bridge !== undefined) void bridge.release(guest.lease);
+              setGuest({ phase: 'off' });
+            }, 5000);
+            return () => window.clearTimeout(timer);
+          }, [guest.phase, url]);
 
           /** Reload through whichever carrier is live. */
           const reloadPage = () => {
@@ -822,7 +875,7 @@ window.__ModuleLoader__.load({
                 name: guest.lease,
                 partition: guest.partition,
                 allowpopups: '',
-                src: target,
+                src: `about:blank#${guest.lease}`,
                 style: frameStyle,
               });
             }
