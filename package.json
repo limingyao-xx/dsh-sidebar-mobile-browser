@@ -1,0 +1,52 @@
+{
+  "name": "dsh-sidebar-mobile-browser",
+  "version": "0.1.0",
+  "description": "Mobile-device preview browser for the DSH right sidebar: pick a phone or tablet size, @-mention the page URL from the composer, copy the URL in one click.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OWNER/dsh-sidebar-mobile-browser.git"
+  },
+  "homepage": "https://github.com/OWNER/dsh-sidebar-mobile-browser#readme",
+  "bugs": {
+    "url": "https://github.com/OWNER/dsh-sidebar-mobile-browser/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "sidebar",
+    "browser",
+    "mobile-preview",
+    "responsive"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-sidebar-right",
+        "@deepseek-ai/dsh-client-ui-input-trigger"
+      ]
+    }
+  }
+}
