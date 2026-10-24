@@ -83,7 +83,7 @@ npm test         # 无 DSH 环境下的冒烟测试：shim 掉 React/window，�
 
 1. `npm publish --access public`（`package.json` 已含 `files` / `exports` / `dsh.bundle` / `dsh.client`）。
 2. 在 DSH 插件市场提交仓库与包名，审核后即可被搜索安装。
-3. 别忘了把 `package.json` 里 `repository` / `homepage` / `bugs` 的 `OWNER` 换成你的 GitHub 账号。
+3. `repository` / `homepage` / `bugs` 已指向 `limingyao-xx/dsh-sidebar-mobile-browser`；改仓库名或换账号时记得同步。
 
 ## License
 

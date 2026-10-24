@@ -7,11 +7,11 @@
   "author": "10301139@qq.com",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OWNER/dsh-sidebar-mobile-browser.git"
+    "url": "git+https://github.com/limingyao-xx/dsh-sidebar-mobile-browser.git"
   },
-  "homepage": "https://github.com/OWNER/dsh-sidebar-mobile-browser#readme",
+  "homepage": "https://github.com/limingyao-xx/dsh-sidebar-mobile-browser#readme",
   "bugs": {
-    "url": "https://github.com/OWNER/dsh-sidebar-mobile-browser/issues"
+    "url": "https://github.com/limingyao-xx/dsh-sidebar-mobile-browser/issues"
   },
   "keywords": [
     "dsh",
