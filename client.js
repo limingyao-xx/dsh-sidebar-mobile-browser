@@ -12,6 +12,8 @@ window.__ModuleLoader__.load({
     const KIND = 'mobile-browser';
     /** Per-profile memory of the last device size. */
     const SIZE_STORAGE_KEY = 'dsh.sidebar-mobile-browser.size';
+    /** Per-profile default page: a blank tab of this type opens it. */
+    const HOME_STORAGE_KEY = 'dsh.sidebar-mobile-browser.home';
     /** Plugin stylesheet identity inside the page. */
     const STYLE_KEY = 'dsh-sidebar-mobile-browser/client.css';
     /** How long a remembered page stays offered to the `@` menu. */
@@ -69,6 +71,15 @@ window.__ModuleLoader__.load({
       'command.url': '引用当前预览页地址',
       'command.urlHint': '把预览页 URL 写进输入框',
       'error.insert': '插入失败：该会话的输入框尚未就绪。',
+      'action.home.set': '设为默认主页',
+      'action.home.clear': '取消默认主页',
+      'empty.openHome': '打开默认主页',
+      'empty.home': '默认主页：{url}',
+      'action.shot': '截图（捕获时请选择"当前标签页"）',
+      'action.shotCopied': '截图已复制',
+      'action.shotSaved': '截图已下载',
+      'error.captureDenied': '截图未完成：捕获被取消或不被允许。可改用系统截图（Win+Shift+S）。',
+      'error.captureBlank': '截图失败：没有取到画面，请重试或改用系统截图。',
     };
 
     const en = {
@@ -95,6 +106,15 @@ window.__ModuleLoader__.load({
       'command.url': 'Insert the preview page URL',
       'command.urlHint': 'Write the preview page URL into the composer',
       'error.insert': 'Insertion failed: this session has no composer yet.',
+      'action.home.set': 'Set as default page',
+      'action.home.clear': 'Clear default page',
+      'empty.openHome': 'Open the default page',
+      'empty.home': 'Default page: {url}',
+      'action.shot': 'Screenshot (pick "This tab" when asked)',
+      'action.shotCopied': 'Screenshot copied',
+      'action.shotSaved': 'Screenshot downloaded',
+      'error.captureDenied': 'Screenshot cancelled or not permitted. Use the system screenshot (Win+Shift+S) instead.',
+      'error.captureBlank': 'Screenshot failed: no frame was captured. Retry, or use the system screenshot.',
     };
 
     /** Stylesheet: inherits the surrounding ink with color-mix, no fixed palette. */
@@ -118,6 +138,9 @@ window.__ModuleLoader__.load({
 .dmb-frame{position:absolute;top:0;left:0;border:0;background:#fff;transform-origin:top left}
 .dmb-empty{max-width:280px;text-align:center;opacity:.72;line-height:1.6}
 .dmb-empty-title{font-weight:600;margin-bottom:4px}
+.dmb-empty-actions{margin-top:10px;display:flex;flex-direction:column;align-items:center;gap:6px}
+.dmb-empty-home{opacity:.6;word-break:break-all}
+.dmb-btn[aria-pressed="true"]{background:color-mix(in srgb,currentColor 12%,transparent);border-color:color-mix(in srgb,currentColor 38%,transparent)}
 .dmb-error{padding:0 10px 8px;color:#d9534f}
 .dmb-title{display:inline-flex;align-items:center;gap:5px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 `;
@@ -159,6 +182,46 @@ window.__ModuleLoader__.load({
       const number = Math.round(Number(value));
       if (!Number.isFinite(number)) return MIN_SIDE;
       return Math.min(MAX_SIDE, Math.max(MIN_SIDE, number));
+    }
+
+    /** Read the remembered default page; anything unusable reads as "none". */
+    function readHome() {
+      try {
+        const raw = window.localStorage.getItem(HOME_STORAGE_KEY);
+        if (raw === null || raw === '') return '';
+        const value = normalizeUrl(raw);
+        return value.ok ? value.url : '';
+      } catch (error) {
+        void error;
+      }
+      return '';
+    }
+
+    /** Remember the default page; an empty string forgets it. */
+    function writeHome(url) {
+      try {
+        if (url !== '') {
+          window.localStorage.setItem(HOME_STORAGE_KEY, url);
+        } else if (typeof window.localStorage.removeItem === 'function') {
+          window.localStorage.removeItem(HOME_STORAGE_KEY);
+        } else {
+          window.localStorage.setItem(HOME_STORAGE_KEY, '');
+        }
+      } catch (error) {
+        void error;
+      }
+    }
+
+    /** Save one blob through a temporary anchor. */
+    function downloadBlob(blob, name) {
+      const href = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = href;
+      anchor.download = name;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(href), 2000);
     }
 
     /** Turn typed input into an addressable http(s) URL. */
@@ -259,6 +322,37 @@ window.__ModuleLoader__.load({
       );
     }
 
+    /** A star: filled once this page is the default home, outlined otherwise. */
+    function HomeGlyph({ filled }) {
+      return h(
+        'svg',
+        { width: 14, height: 14, viewBox: '0 0 16 16', 'aria-hidden': true, style: { display: 'block' } },
+        h('path', {
+          d: 'M8 2.1l1.82 3.7 4.08.6-2.95 2.87.7 4.06L8 11.4l-3.65 1.92.7-4.06L2.1 6.4l4.08-.6z',
+          fill: filled === true ? 'currentColor' : 'none',
+          stroke: 'currentColor',
+          strokeWidth: 1.2,
+          strokeLinejoin: 'round',
+        }),
+      );
+    }
+
+    /** A camera outline for the screenshot button. */
+    function CameraGlyph() {
+      return h(
+        'svg',
+        { width: 14, height: 14, viewBox: '0 0 16 16', 'aria-hidden': true, style: { display: 'block' } },
+        h('path', {
+          d: 'M2.2 5.6c0-.66.54-1.2 1.2-1.2h1.54l.74-1.1h4.64l.74 1.1h1.54c.66 0 1.2.54 1.2 1.2v6.1c0 .66-.54 1.2-1.2 1.2H3.4c-.66 0-1.2-.54-1.2-1.2z',
+          fill: 'none',
+          stroke: 'currentColor',
+          strokeWidth: 1.2,
+          strokeLinejoin: 'round',
+        }),
+        h('circle', { cx: 8, cy: 8.6, r: 2.1, fill: 'none', stroke: 'currentColor', strokeWidth: 1.2 }),
+      );
+    }
+
     return {
       inject: ['slots', 'locale', 'sessions', 'commandUi', 'sidebarRight', 'sidebarRightTabs', 'inputTriggers'],
       apply(ctx) {
@@ -307,7 +401,9 @@ window.__ModuleLoader__.load({
             const entry = pages.get(tabId);
             return entry === undefined ? '' : entry.url;
           }, [tabId]);
-          const initial = seeded.ok ? seeded.url : remembered;
+          /** The default page this profile opens when a tab starts blank. */
+          const [home, setHome] = React.useState(readHome);
+          const initial = seeded.ok ? seeded.url : remembered !== '' ? remembered : home;
 
           const [size, setSize] = React.useState(readSize);
           const [draft, setDraft] = React.useState(initial);
@@ -316,6 +412,8 @@ window.__ModuleLoader__.load({
           const [revision, setRevision] = React.useState(0);
           const [copied, setCopied] = React.useState(false);
           const [inserted, setInserted] = React.useState(false);
+          /** '' | 'copied' | 'saved' — what the screenshot button just did. */
+          const [shot, setShot] = React.useState('');
           const [error, setError] = React.useState('');
           /** The size row is collapsed by default; the toolbar toggle reveals it. */
           const [sizeOpen, setSizeOpen] = React.useState(false);
@@ -359,16 +457,19 @@ window.__ModuleLoader__.load({
             return () => window.clearTimeout(timer);
           }, [inserted]);
 
+          React.useEffect(() => {
+            if (shot === '') return undefined;
+            const timer = window.setTimeout(() => setShot(''), 1600);
+            return () => window.clearTimeout(timer);
+          }, [shot]);
+
           const open = () => {
             const result = normalizeUrl(draft);
             if (!result.ok) {
               setError(result.reason === 'scheme' ? copy('error.scheme') : copy('error.empty'));
               return;
             }
-            setError('');
-            setDraft(result.url);
-            setUrl(result.url);
-            setRevision((value) => value + 1);
+            show(result.url);
           };
 
           const copyUrl = () => {
@@ -394,6 +495,98 @@ window.__ModuleLoader__.load({
             } catch (failure) {
               void failure;
               failed();
+            }
+          };
+
+          /** Show one already-validated address without re-reading the draft. */
+          const show = (target) => {
+            setError('');
+            setDraft(target);
+            setUrl(target);
+            setRevision((value) => value + 1);
+          };
+
+          /** Remember this page as the default home, or forget it again. */
+          const toggleHome = () => {
+            if (url === '') return;
+            const next = home === url ? '' : url;
+            setHome(next);
+            writeHome(next);
+          };
+
+          /**
+           * Photograph the device frame. Cross-origin pages cannot be read back
+           * from their iframe (their pixels are opaque), so the honest capture
+           * path is to screen-capture the tab and crop the frame out of it.
+           */
+          const shootPage = async () => {
+            if (url === '') return;
+            const stage = stageRef.current;
+            const media = typeof navigator === 'undefined' ? undefined : navigator.mediaDevices;
+            if (stage === null || media === undefined || typeof media.getDisplayMedia !== 'function') {
+              setError(copy('error.captureDenied'));
+              return;
+            }
+            let stream;
+            try {
+              stream = await media.getDisplayMedia({ video: { frameRate: 2 }, audio: false });
+            } catch (failure) {
+              void failure;
+              setError(copy('error.captureDenied'));
+              return;
+            }
+            try {
+              const video = document.createElement('video');
+              video.muted = true;
+              video.srcObject = stream;
+              await video.play();
+              if (video.videoWidth === 0) {
+                await new Promise((resolve) => {
+                  window.setTimeout(resolve, 1200);
+                  video.addEventListener('loadeddata', resolve, { once: true });
+                });
+              }
+              const target = stage.querySelector('.dmb-device');
+              const box = (target === null ? stage : target).getBoundingClientRect();
+              const scaleX = video.videoWidth === 0 ? 1 : video.videoWidth / Math.max(1, window.innerWidth);
+              const scaleY = video.videoHeight === 0 ? 1 : video.videoHeight / Math.max(1, window.innerHeight);
+              const canvas = document.createElement('canvas');
+              canvas.width = Math.max(1, Math.round(box.width * scaleX));
+              canvas.height = Math.max(1, Math.round(box.height * scaleY));
+              const painter = canvas.getContext('2d');
+              if (painter === null) {
+                setError(copy('error.captureBlank'));
+                return;
+              }
+              painter.drawImage(
+                video,
+                box.left * scaleX, box.top * scaleY, box.width * scaleX, box.height * scaleY,
+                0, 0, canvas.width, canvas.height,
+              );
+              const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+              if (blob === null) {
+                setError(copy('error.captureBlank'));
+                return;
+              }
+              const clipboard = navigator.clipboard;
+              if (clipboard !== undefined && typeof clipboard.write === 'function' && typeof window.ClipboardItem === 'function') {
+                try {
+                  await clipboard.write([new window.ClipboardItem({ 'image/png': blob })]);
+                  setError('');
+                  setShot('copied');
+                  return;
+                } catch (failure) {
+                  void failure;
+                }
+              }
+              downloadBlob(blob, `mobile-preview-${hostOf(url)}-${Date.now()}.png`);
+              setError('');
+              setShot('saved');
+            } catch (failure) {
+              void failure;
+              setError(copy('error.captureBlank'));
+            } finally {
+              stream.getTracks().forEach((track) => track.stop());
             }
           };
 
@@ -442,6 +635,7 @@ window.__ModuleLoader__.load({
           };
 
           const currentPreset = size.preset === undefined ? 'custom' : size.preset;
+          const isHome = home !== '' && home === url;
 
           return h(
             'div',
@@ -496,6 +690,23 @@ window.__ModuleLoader__.load({
                 disabled: url === '',
                 onClick: insertUrl,
               }, '@'),
+              h('button', {
+                type: 'button',
+                className: 'dmb-btn dmb-btn-icon',
+                title: shot === 'copied' ? copy('action.shotCopied') : shot === 'saved' ? copy('action.shotSaved') : copy('action.shot'),
+                'aria-label': copy('action.shot'),
+                disabled: url === '',
+                onClick: shootPage,
+              }, h(CameraGlyph)),
+              h('button', {
+                type: 'button',
+                className: 'dmb-btn dmb-btn-icon',
+                title: isHome ? copy('action.home.clear') : copy('action.home.set'),
+                'aria-label': copy('action.home.set'),
+                'aria-pressed': isHome,
+                disabled: url === '',
+                onClick: toggleHome,
+              }, h(HomeGlyph, { filled: isHome })),
               h('button', {
                 type: 'button',
                 className: 'dmb-btn dmb-btn-icon',
@@ -567,7 +778,10 @@ window.__ModuleLoader__.load({
               url === ''
                 ? h('div', { className: 'dmb-empty' },
                     h('div', { className: 'dmb-empty-title' }, copy('empty.title')),
-                    h('div', null, copy('empty.body')))
+                    h('div', null, copy('empty.body')),
+                    home === '' ? null : h('div', { className: 'dmb-empty-actions' },
+                      h('button', { type: 'button', className: 'dmb-btn', onClick: () => show(home) }, copy('empty.openHome')),
+                      h('div', { className: 'dmb-empty-home' }, copy('empty.home', { url: hostOf(home) }))))
                 : h('div', {
                     className: 'dmb-device',
                     style: { width: `${Math.round(size.width * scale)}px`, height: `${Math.round(size.height * scale)}px` },

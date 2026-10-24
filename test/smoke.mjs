@@ -22,6 +22,7 @@ globalThis.window = {
   localStorage: {
     getItem: (key) => (storage.has(key) ? storage.get(key) : null),
     setItem: (key, value) => { storage.set(key, String(value)); },
+    removeItem: (key) => { storage.delete(key); },
   },
   setTimeout: () => 0,
   clearTimeout: () => {},
@@ -182,6 +183,8 @@ walk(element, (node) => {
 });
 console.log('toolbar buttons:', JSON.stringify(labels));
 if (!labels.includes('action.mention')) throw new Error('the address bar must offer the insert button');
+if (!labels.includes('action.shot')) throw new Error('the address bar must offer the screenshot button');
+if (!labels.includes('action.home.set')) throw new Error('the address bar must offer the default-page button');
 
 // The device row is collapsed by default: the toolbar toggle is the only way in,
 // so a plain render must not show the preset select at all.
@@ -212,5 +215,55 @@ findSizeToggle(element).props.onClick();
 rerender();
 if (countByClass(element, 'dmb-select') !== 0) throw new Error('the size toggle must collapse the row again');
 console.log('size row: collapsed by default, opens and closes from the toolbar');
+
+// The default page: the star remembers the page on show, and a tab that opens
+// with no address seeds itself from that memory instead of starting blank.
+const findButtonByTitle = (root, prefix) => {
+  let found;
+  walk(root, (node) => {
+    const title = node.props === undefined ? undefined : node.props.title;
+    if (found === undefined && node.type === 'button' && typeof title === 'string' && title.startsWith(prefix)) found = node;
+  });
+  return found;
+};
+storage.delete('dsh.sidebar-mobile-browser.home');
+rerender();
+const starOff = findButtonByTitle(element, 'action.home');
+if (starOff === undefined) throw new Error('expected a default-page button in the toolbar');
+if (starOff.props['aria-pressed'] !== false) throw new Error('the star must start unlit');
+starOff.props.onClick();
+rerender();
+console.log('stored default page:', storage.get('dsh.sidebar-mobile-browser.home'));
+if (storage.get('dsh.sidebar-mobile-browser.home') !== 'https://example.com/docs?x=1') {
+  throw new Error('the star must remember the page it is showing');
+}
+if (findButtonByTitle(element, 'action.home').props['aria-pressed'] !== true) {
+  throw new Error('the star must light up once the page is the default');
+}
+findButtonByTitle(element, 'action.home').props.onClick();
+rerender();
+if (storage.has('dsh.sidebar-mobile-browser.home')) throw new Error('clicking the lit star must clear the default page');
+console.log('default page: stored, lit, cleared');
+
+findButtonByTitle(element, 'action.home').props.onClick();
+rerender();
+hookCursor = 0;
+const blankBody = body({
+  sessionId: 'sess-1',
+  t: ctx.locale.bind(),
+  useTabInfo: () => ({ tab: { id: 'tab-blank', kind: 'mobile-browser', navigation: { params: {} } } }),
+});
+const draftField = (() => {
+  let found;
+  walk(blankBody, (node) => {
+    if (found === undefined && node.type === 'input' && node.props.className === 'dmb-url') found = node;
+  });
+  return found;
+})();
+console.log('blank tab draft:', draftField === undefined ? 'none' : draftField.props.value);
+if (draftField === undefined || draftField.props.value !== 'https://example.com/docs?x=1') {
+  throw new Error('a blank tab must open the default page');
+}
+console.log('blank tab: seeded from the default page');
 
 console.log('SMOKE_OK');
