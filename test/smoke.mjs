@@ -216,6 +216,22 @@ const walk = (node, visit) => {
   visit(node);
   for (const child of node.children ?? []) walk(child, visit);
 };
+const findButtonByTitle = (root, prefix) => {
+  let found;
+  walk(root, (node) => {
+    const title = node.props === undefined ? undefined : node.props.title;
+    if (found === undefined && node.type === 'button' && typeof title === 'string' && title.startsWith(prefix)) found = node;
+  });
+  return found;
+};
+/** The star is the only toolbar button that reports a pressed state. */
+const findStar = (root) => {
+  let found;
+  walk(root, (node) => {
+    if (found === undefined && node.type === 'button' && node.props !== undefined && 'aria-pressed' in node.props) found = node;
+  });
+  return found;
+};
 const labels = [];
 walk(element, (node) => {
   if (node.type === 'button' && typeof node.props.title === 'string') labels.push(node.props.title);
@@ -223,7 +239,8 @@ walk(element, (node) => {
 console.log('toolbar buttons:', JSON.stringify(labels));
 if (!labels.includes('action.mention')) throw new Error('the address bar must offer the insert button');
 if (!labels.includes('action.shot')) throw new Error('the address bar must offer the screenshot button');
-if (!labels.includes('action.home.set')) throw new Error('the address bar must offer the default-page button');
+if (labels.includes('action.home.set')) throw new Error('the default-page button belongs to the size row');
+if (labels.includes('action.home.go')) throw new Error('the house button belongs to the size row');
 
 // The device row is collapsed by default: the toolbar toggle is the only way in,
 // so a plain render must not show the preset select at all.
@@ -250,6 +267,8 @@ if (sizeToggle.props['aria-expanded'] !== false) throw new Error('the size toggl
 sizeToggle.props.onClick();
 rerender();
 if (countByClass(element, 'dmb-select') !== 1) throw new Error('the size toggle must reveal the size row');
+if (findButtonByTitle(element, 'action.home.set') === undefined) throw new Error('the size row must carry the default-page button');
+if (findButtonByTitle(element, 'action.home.go') === undefined) throw new Error('the size row must carry the house button');
 findSizeToggle(element).props.onClick();
 rerender();
 if (countByClass(element, 'dmb-select') !== 0) throw new Error('the size toggle must collapse the row again');
@@ -257,23 +276,9 @@ console.log('size row: collapsed by default, opens and closes from the toolbar')
 
 // The default page: the star remembers the page on show, and a tab that opens
 // with no address seeds itself from that memory instead of starting blank.
-const findButtonByTitle = (root, prefix) => {
-  let found;
-  walk(root, (node) => {
-    const title = node.props === undefined ? undefined : node.props.title;
-    if (found === undefined && node.type === 'button' && typeof title === 'string' && title.startsWith(prefix)) found = node;
-  });
-  return found;
-};
-/** The star is the only toolbar button that reports a pressed state. */
-const findStar = (root) => {
-  let found;
-  walk(root, (node) => {
-    if (found === undefined && node.type === 'button' && node.props !== undefined && 'aria-pressed' in node.props) found = node;
-  });
-  return found;
-};
 storage.delete('dsh.sidebar-mobile-browser.home');
+rerender();
+findSizeToggle(element).props.onClick();
 rerender();
 const starOff = findStar(element);
 if (starOff === undefined) throw new Error('expected a default-page button in the toolbar');
@@ -338,7 +343,10 @@ hookCursor = 0;
 const drifted = body(driftProps);
 console.log('drifted iframe:', iframeOf(drifted).props.src);
 if (iframeOf(drifted).props.src !== 'https://other.test/landing') throw new Error('expected the drifted page to be framed');
-const house = findButtonByTitle(drifted, 'action.home.go');
+findSizeToggle(drifted).props.onClick();
+hookCursor = 0;
+const driftedOpen = body(driftProps);
+const house = findButtonByTitle(driftedOpen, 'action.home.go');
 if (house === undefined) throw new Error('expected a house button in the toolbar');
 if (house.props.disabled === true) throw new Error('the house button must work once a default page exists');
 house.props.onClick();
@@ -351,6 +359,9 @@ console.log('house button: jumps back to the default page');
 // With nothing remembered there is nowhere to go, so the button stays disabled.
 storage.delete('dsh.sidebar-mobile-browser.home');
 hookStore.length = 0;
+hookCursor = 0;
+const noHomeCollapsed = body(driftProps);
+findSizeToggle(noHomeCollapsed).props.onClick();
 hookCursor = 0;
 const noHome = body(driftProps);
 if (findButtonByTitle(noHome, 'action.home.go').props.disabled !== true) {
