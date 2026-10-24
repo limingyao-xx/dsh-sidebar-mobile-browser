@@ -33,8 +33,8 @@
     "cordis.patch.yml",
     "locale/*.json",
     "icon.svg",
-    "README.md",
-    "LICENSE"
+    "LICENSE",
+    "test/smoke.mjs"
   ],
   "dsh": {
     "bundle": {
@@ -48,5 +48,9 @@
         "@deepseek-ai/dsh-client-ui-input-trigger"
       ]
     }
+  },
+  "scripts": {
+    "test": "node test/smoke.mjs",
+    "checks": "node --check index.js && node --check client.js"
   }
 }

@@ -60,8 +60,11 @@ current page URL from the composer, one-click copy.
 ## 开发
 
 ```bash
-node --check index.js && node --check client.js   # 无构建步骤，纯 ESM + 浏览器 classic script
+npm run checks   # node --check index.js && node --check client.js
+npm test         # 无 DSH 环境下的冒烟测试：shim 掉 React/window，验证标签页类型、两个 slot、@ 源与 onPick
 ```
+
+- 无构建步骤、无第三方依赖：纯 ESM（Host 半边）+ 浏览器 classic script（`client.js`）。
 
 - `client.js` 是浏览器端 classic script，`window.__ModuleLoader__.load({ id, factory })` 导出 `{ inject, apply }`；
   直接 `require('react')` 即可，不依赖 DSH 内部客户端包（只通过 `inject` 声明顺序）。
