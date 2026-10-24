@@ -226,9 +226,17 @@ const findButtonByTitle = (root, prefix) => {
   });
   return found;
 };
+/** The star is the only toolbar button that reports a pressed state. */
+const findStar = (root) => {
+  let found;
+  walk(root, (node) => {
+    if (found === undefined && node.type === 'button' && node.props !== undefined && 'aria-pressed' in node.props) found = node;
+  });
+  return found;
+};
 storage.delete('dsh.sidebar-mobile-browser.home');
 rerender();
-const starOff = findButtonByTitle(element, 'action.home');
+const starOff = findStar(element);
 if (starOff === undefined) throw new Error('expected a default-page button in the toolbar');
 if (starOff.props['aria-pressed'] !== false) throw new Error('the star must start unlit');
 starOff.props.onClick();
@@ -237,16 +245,19 @@ console.log('stored default page:', storage.get('dsh.sidebar-mobile-browser.home
 if (storage.get('dsh.sidebar-mobile-browser.home') !== 'https://example.com/docs?x=1') {
   throw new Error('the star must remember the page it is showing');
 }
-if (findButtonByTitle(element, 'action.home').props['aria-pressed'] !== true) {
+if (findStar(element).props['aria-pressed'] !== true) {
   throw new Error('the star must light up once the page is the default');
 }
-findButtonByTitle(element, 'action.home').props.onClick();
+findStar(element).props.onClick();
 rerender();
 if (storage.has('dsh.sidebar-mobile-browser.home')) throw new Error('clicking the lit star must clear the default page');
 console.log('default page: stored, lit, cleared');
 
-findButtonByTitle(element, 'action.home').props.onClick();
+findStar(element).props.onClick();
 rerender();
+// A fresh mount: clear the shared hook slots so the draft comes from storage,
+// not from the state the previous mount left behind.
+hookStore.length = 0;
 hookCursor = 0;
 const blankBody = body({
   sessionId: 'sess-1',
@@ -265,5 +276,47 @@ if (draftField === undefined || draftField.props.value !== 'https://example.com/
   throw new Error('a blank tab must open the default page');
 }
 console.log('blank tab: seeded from the default page');
+
+// The frame's own navigation is invisible from here (cross-origin), so the address
+// bar cannot follow a link click. The house button is the way back: it re-opens the
+// remembered default page from wherever the frame drifted to.
+const iframeOf = (root) => {
+  let found;
+  walk(root, (node) => {
+    if (found === undefined && node.type === 'iframe') found = node;
+  });
+  return found;
+};
+const homeUrl = storage.get('dsh.sidebar-mobile-browser.home');
+if (homeUrl !== 'https://example.com/docs?x=1') throw new Error('the default page must still be remembered');
+const driftProps = {
+  sessionId: 'sess-1',
+  t: ctx.locale.bind(),
+  useTabInfo: () => ({ tab: { id: 'tab-drift', kind: 'mobile-browser', navigation: { params: { url: 'https://other.test/landing' } } } }),
+};
+hookStore.length = 0;
+hookCursor = 0;
+const drifted = body(driftProps);
+console.log('drifted iframe:', iframeOf(drifted).props.src);
+if (iframeOf(drifted).props.src !== 'https://other.test/landing') throw new Error('expected the drifted page to be framed');
+const house = findButtonByTitle(drifted, 'action.home.go');
+if (house === undefined) throw new Error('expected a house button in the toolbar');
+if (house.props.disabled === true) throw new Error('the house button must work once a default page exists');
+house.props.onClick();
+hookCursor = 0;
+const returned = body(driftProps);
+console.log('after the house click:', iframeOf(returned).props.src);
+if (iframeOf(returned).props.src !== homeUrl) throw new Error('the house button must return to the default page');
+console.log('house button: jumps back to the default page');
+
+// With nothing remembered there is nowhere to go, so the button stays disabled.
+storage.delete('dsh.sidebar-mobile-browser.home');
+hookStore.length = 0;
+hookCursor = 0;
+const noHome = body(driftProps);
+if (findButtonByTitle(noHome, 'action.home.go').props.disabled !== true) {
+  throw new Error('the house button must be disabled without a default page');
+}
+console.log('house button: disabled when no default page is set');
 
 console.log('SMOKE_OK');

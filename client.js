@@ -73,6 +73,7 @@ window.__ModuleLoader__.load({
       'error.insert': '插入失败：该会话的输入框尚未就绪。',
       'action.home.set': '设为默认主页',
       'action.home.clear': '取消默认主页',
+      'action.home.go': '回到主页：{host}',
       'empty.openHome': '打开默认主页',
       'empty.home': '默认主页：{url}',
       'action.shot': '截图（捕获时请选择"当前标签页"）',
@@ -108,6 +109,7 @@ window.__ModuleLoader__.load({
       'error.insert': 'Insertion failed: this session has no composer yet.',
       'action.home.set': 'Set as default page',
       'action.home.clear': 'Clear default page',
+      'action.home.go': 'Go to the default page: {host}',
       'empty.openHome': 'Open the default page',
       'empty.home': 'Default page: {url}',
       'action.shot': 'Screenshot (pick "This tab" when asked)',
@@ -334,6 +336,22 @@ window.__ModuleLoader__.load({
           strokeWidth: 1.2,
           strokeLinejoin: 'round',
         }),
+      );
+    }
+
+    /** A house outline: jump back to the remembered default page. */
+    function HomeNavGlyph() {
+      return h(
+        'svg',
+        { width: 14, height: 14, viewBox: '0 0 16 16', 'aria-hidden': true, style: { display: 'block' } },
+        h('path', {
+          d: 'M2.6 7.4 8 3l5.4 4.4v4.9c0 .5-.4.9-.9.9H3.5c-.5 0-.9-.4-.9-.9z',
+          fill: 'none',
+          stroke: 'currentColor',
+          strokeWidth: 1.2,
+          strokeLinejoin: 'round',
+        }),
+        h('path', { d: 'M6.4 13.2V9.8h3.2v3.4', fill: 'none', stroke: 'currentColor', strokeWidth: 1.1, strokeLinejoin: 'round' }),
       );
     }
 
@@ -698,6 +716,14 @@ window.__ModuleLoader__.load({
                 disabled: url === '',
                 onClick: shootPage,
               }, h(CameraGlyph)),
+              h('button', {
+                type: 'button',
+                className: 'dmb-btn dmb-btn-icon',
+                title: copy('action.home.go', { host: home === '' ? '' : hostOf(home) }),
+                'aria-label': copy('action.home.go', { host: home === '' ? '' : hostOf(home) }),
+                disabled: home === '' || url === home,
+                onClick: () => show(home),
+              }, h(HomeNavGlyph)),
               h('button', {
                 type: 'button',
                 className: 'dmb-btn dmb-btn-icon',
