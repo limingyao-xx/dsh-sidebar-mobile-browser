@@ -57,6 +57,7 @@ window.__ModuleLoader__.load({
       'action.reload': '重新加载',
       'frame.pending': '正在创建预览页…',
       'error.frame': '页面加载失败（{code}）',
+      'error.fallback': '桌面端未能承载页面，已退回 iframe：地址栏不会跟随站内跳转',
       'action.rotate': '横竖屏切换',
       'action.size': '尺寸设置',
       'device.label': '尺寸',
@@ -92,6 +93,7 @@ window.__ModuleLoader__.load({
       'action.reload': 'Reload',
       'frame.pending': 'Starting the preview…',
       'error.frame': 'Could not load the page ({code})',
+      'error.fallback': 'The desktop shell could not host the page; fell back to an iframe, so the address bar cannot follow in-page navigation',
       'action.rotate': 'Rotate',
       'action.size': 'Size settings',
       'device.label': 'Size',
@@ -480,6 +482,8 @@ window.__ModuleLoader__.load({
           urlRef.current = url;
           const sizeRef = React.useRef(size);
           sizeRef.current = size;
+          /** The address we last handed to the guest; '' once it arrived. */
+          const loadingRef = React.useRef('');
           const apiRef = React.useRef(null);
           apiRef.current = { setUrl, setDraft, setError, setAttached };
 
@@ -520,13 +524,37 @@ window.__ModuleLoader__.load({
             return shown;
           };
 
+          /**
+           * Put the guest's own URL in the address bar. Every path that can move
+           * a page funnels through here - navigation events and the poll below -
+           * so an in-page link, a redirect or a form post all land the same way.
+           */
+          const mirror = (next) => {
+            if (next === '' || next.startsWith('about:blank')) return;
+            if (next === urlRef.current) {
+              loadingRef.current = '';
+              return;
+            }
+            /** Still loading the address we asked for: this is the old page. */
+            if (loadingRef.current !== '' && next !== loadingRef.current) return;
+            loadingRef.current = '';
+            const api = apiRef.current;
+            if (api === null) return;
+            api.setUrl(next);
+            api.setDraft(next);
+          };
+
           /** Ask the guest to show one page; it is born on `about:blank`. */
           const navigate = (target) => {
             const element = frameRef.current;
             const current = guestRef.current;
             if (element === null || current === null || current.phase !== 'ready' || target === '') return;
             if (element.dataset.attached !== '1' || typeof element.loadURL !== 'function') return;
-            if (guestUrl(element) === target) return;
+            if (guestUrl(element) === target) {
+              loadingRef.current = '';
+              return;
+            }
+            loadingRef.current = target;
             try {
               void element.loadURL(target).catch(() => {});
             } catch (failure) {
@@ -556,12 +584,7 @@ window.__ModuleLoader__.load({
               element.setAttribute('style', 'width:100%;height:100%;border:0;background:#fff');
               frameRef.current = element;
               const api = apiRef.current;
-              const sync = () => {
-                const next = guestUrl(element);
-                if (next === '' || next === urlRef.current) return;
-                api.setUrl(next);
-                api.setDraft(next);
-              };
+              const sync = () => mirror(guestUrl(element));
               const inPage = (event) => {
                 if (event === undefined || event.isMainFrame !== false) sync();
               };
@@ -607,6 +630,20 @@ window.__ModuleLoader__.load({
             navigate(url);
           }, [url, attached]);
 
+          /**
+           * Follow the guest by asking it, not by trusting an event: a page that
+           * navigates itself reports through `did-navigate-in-page` in most Electron
+           * builds, but not for every kind of hop, and a missed event used to leave
+           * the address bar frozen on the page the user arrived from.
+           */
+          React.useEffect(() => {
+            if (!attached) return undefined;
+            const timer = window.setInterval(() => {
+              mirror(guestUrl(frameRef.current));
+            }, 900);
+            return () => window.clearInterval(timer);
+          }, [attached]);
+
           /** A size edit that crosses phone/tablet/desktop restarts in a new class. */
           React.useEffect(() => {
             const element = frameRef.current;
@@ -632,6 +669,7 @@ window.__ModuleLoader__.load({
               const shown = guestUrl(frameRef.current);
               if (shown !== '' && !shown.startsWith('about:blank')) return;
               if (bridge !== undefined) void bridge.release(guest.lease);
+              setError(copy('error.fallback'));
               setGuest({ phase: 'off' });
             }, 6000);
             return () => window.clearTimeout(timer);

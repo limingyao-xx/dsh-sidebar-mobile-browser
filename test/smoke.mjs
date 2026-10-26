@@ -35,6 +35,7 @@ function fakeNode(tag) {
     loadURL(target) { node.url = String(target); return Promise.resolve(); },
     setUserAgent(agent) { node.ua = String(agent); },
     reload() { node.reloads = (node.reloads ?? 0) + 1; },
+    getBoundingClientRect() { return { width: 420, height: 800, top: 0, left: 0 }; },
   };
   return node;
 }
@@ -56,7 +57,11 @@ globalThis.window = {
   },
   setTimeout: () => 0,
   clearTimeout: () => {},
+  setInterval: (fn) => { intervals.push(fn); return intervals.length; },
+  clearInterval: () => {},
 };
+/** Intervals the body registered - the guest poll lives on one of these. */
+const intervals = [];
 globalThis.document = documentShim;
 globalThis.ResizeObserver = class { observe() {} disconnect() {} };
 
@@ -67,6 +72,8 @@ globalThis.ResizeObserver = class { observe() {} disconnect() {} };
  */
 let hookCursor = 0;
 const hookStore = [];
+/** Persistent `useRef` cells, sharing the hook cursor so both reset together. */
+const refStore = [];
 /** Assigned once the body component is resolved; the test calls it after a click. */
 let rerender = () => { throw new Error('rerender() ran before the body was resolved'); };
 const React = {
@@ -89,7 +96,11 @@ const React = {
     };
     return [hookStore[slot], set];
   },
-  useRef: () => ({ current: null }),
+  useRef: (initial) => {
+    const slot = hookCursor++;
+    if (!(slot in refStore)) refStore[slot] = { current: initial === undefined ? null : initial };
+    return refStore[slot];
+  },
   useEffect: (fn) => { fn(); },
 };
 const requireShim = (id) => {
@@ -429,6 +440,29 @@ if (addressNode.props.value !== 'https://other.test/deep/link') {
   throw new Error(`the address bar must follow the guest, got ${String(addressNode.props.value)}`);
 }
 console.log('guest webview: in-page navigation is mirrored into the address bar');
+
+// The reported bug: a page moved, no event arrived, the address bar froze.
+const latestGuest = (tree) => {
+  let host;
+  walk(tree, (node) => {
+    if (host === undefined && node.props.className === 'dmb-frame dmb-guest') host = node;
+  });
+  if (host === undefined) throw new Error('expected a guest host');
+  return host.children.find((child) => child !== null && typeof child === 'object' && child.tag === 'webview');
+};
+hookCursor = 0;
+latestGuest(body(driftProps)).url = 'https://other.test/spa/route/2';
+for (const tick of intervals) tick();
+hookCursor = 0;
+const polled = body(driftProps);
+let polledAddress;
+walk(polled, (node) => {
+  if (polledAddress === undefined && node.props.className === 'dmb-url') polledAddress = node;
+});
+if (polledAddress === undefined || polledAddress.props.value !== 'https://other.test/spa/route/2') {
+  throw new Error(`the poll must mirror the guest, got ${String(polledAddress === undefined ? undefined : polledAddress.props.value)}`);
+}
+console.log('guest webview: the poll mirrors a page that moved silently');
 
 if (findButtonByTitle(bridged, 'action.back') !== undefined) throw new Error('the toolbar must not offer history buttons');
 if (findButtonByTitle(bridged, 'action.forward') !== undefined) throw new Error('the toolbar must not offer forward navigation');
